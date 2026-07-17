@@ -1,0 +1,8 @@
+# High-fidelity simulation backend (optional, heavy, GPU recommended).
+# Install only if you want to run against AirSim + Unreal Engine.
+airsim>=1.8.1
+msgpack-rpc-python>=0.4.1
+# Optional perception stack for camera-driven AirSim demos.
+ultralytics>=8.2
+opencv-python>=4.8
+# ROS2 (Humble+) is installed via apt / rosdep, not pip. See docs/installation.md

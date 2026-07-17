@@ -1,0 +1,29 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+env/
+.env
+.ipynb_checkpoints/
+# results & artifacts (keep curated figures; everything else is regenerable)
+results/*
+!results/figures/
+results/figures/*.pdf
+results/figures/*.svg
+assets/*.mp4
+*.zip
+.pytest_cache/
+.claude/
+.agents/
+# latex
+paper/*.aux
+paper/*.log
+paper/*.out
+paper/*.bbl
+paper/*.blg
+# os / editors
+.DS_Store
+.idea/
+.vscode/

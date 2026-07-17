@@ -1,0 +1,9 @@
+# Ablation: architecture comparison (Fig. 20).
+base: { env: { num_drones: 3, max_steps: 200 } }
+grid:
+  ppo:              { model: { arch: mlp } }
+  ppo_gnn:          { model: { arch: gnn } }
+  ppo_transformer:  { model: { arch: transformer } }
+  ppo_transformer_gnn: { model: { arch: transformer_gnn } }
+seeds: [0, 1, 2, 3, 4]
+metrics: [coverage, victims_rescued, collision_rate, energy, swarm_intelligence_score]

@@ -1,0 +1,36 @@
+services:
+  swarm-sar:
+    build: .
+    image: swarm-sar:latest
+    volumes:
+      - ./results:/workspace/results
+      - ./assets:/workspace/assets
+    environment:
+      - MPLBACKEND=Agg
+    command: python scripts/run_demo.py --episodes 3 --figures
+
+  dashboard:
+    image: swarm-sar:latest
+    build: .
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./results:/workspace/results
+    command: streamlit run src/swarm_sar/dashboard/app.py --server.port 8501 --server.address 0.0.0.0
+
+  train:
+    image: swarm-sar:latest
+    build: .
+    volumes:
+      - ./results:/workspace/results
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - MPLBACKEND=Agg
+    command: python scripts/train_and_report.py --config configs/training/mappo_transformer_gnn.yaml --archs transformer_gnn --seeds 0

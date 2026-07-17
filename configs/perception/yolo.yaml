@@ -1,0 +1,5 @@
+mode: yolo
+model_path: null
+confidence_threshold: 0.35
+thermal_threshold: 0.75
+fusion_threshold: 0.5

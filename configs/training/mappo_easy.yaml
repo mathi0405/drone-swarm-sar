@@ -1,0 +1,25 @@
+env:
+  num_drones: 3
+  max_steps: 150
+  world: { size: 40, n_victims: 4, n_buildings: 6, n_no_fly_zones: 1, n_dynamic_obstacles: 2 }
+  faults: { enable: false }
+model: { arch: transformer_gnn, hidden_dim: 128 }
+train:
+  algo: mappo
+  lr: 0.0002
+  entropy_coef: 0.01
+  reward_scale: 0.1
+  rollout_len: 1024
+  num_envs: 4
+  value_coef: 0.5
+  gamma: 0.99
+  clip: 0.2
+  epochs: 4
+  curriculum: true
+  bc_warmstart_episodes: 8
+  bc_epochs: 2
+  imitation_coef: 0.02
+  collapse_action_threshold: 0.8
+  total_timesteps: 1000000
+  seed: 0
+log: { experiment_name: mappo_easy }

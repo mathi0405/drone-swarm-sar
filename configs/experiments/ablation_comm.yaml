@@ -1,0 +1,11 @@
+# Ablation: effect of communication quality on swarm intelligence.
+base:
+  env: { num_drones: 3, max_steps: 200 }
+  model: { arch: transformer_gnn }
+grid:
+  # each entry is a named variant with config overrides
+  no_comm:        { env: { comm: { range_m: 0.0,  packet_loss: 1.0 } } }
+  lossy_comm:     { env: { comm: { range_m: 30.0, packet_loss: 0.30 } } }
+  full_comm:      { env: { comm: { range_m: 30.0, packet_loss: 0.05 } } }
+seeds: [0, 1, 2, 3, 4]
+metrics: [coverage, victims_rescued, collision_rate, swarm_intelligence_score]

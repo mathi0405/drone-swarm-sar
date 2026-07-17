@@ -1,0 +1,14 @@
+# Reproducible pins for the core runtime (generated set; regenerate exact locks with
+#   pip install pip-tools && pip-compile --generate-hashes pyproject.toml
+# ). RL/AirSim extras are pinned separately per your CUDA/Unreal setup.
+numpy==1.26.4
+scipy==1.11.4
+matplotlib==3.8.4
+pandas==2.2.2
+networkx==3.2.1
+pyyaml==6.0.1
+pydantic==2.7.4
+imageio==2.34.1
+pillow==10.3.0
+tqdm==4.66.4
+rich==13.7.1

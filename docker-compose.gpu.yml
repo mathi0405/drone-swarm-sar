@@ -1,0 +1,21 @@
+services:
+  train-gpu:
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+    image: swarm-sar:gpu
+    volumes:
+      - ./results:/workspace/results
+      - ./assets:/workspace/assets
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - MPLBACKEND=Agg
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command: bash -lc "nvidia-smi && python scripts/verify_gpu.py --require-cuda && python scripts/train_and_report.py --smoke"

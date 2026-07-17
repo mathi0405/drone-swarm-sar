@@ -1,0 +1,29 @@
+# ---- Core (required to run the self-contained simulation & figures) ----
+numpy>=1.24
+scipy>=1.10
+matplotlib>=3.7
+pandas>=2.0
+pyyaml>=6.0
+pydantic>=2.6,<3
+imageio>=2.30
+pillow>=10.0
+networkx>=3.1
+tqdm>=4.65
+rich>=13.0
+
+# ---- Multi-agent RL (CTDE / MAPPO / GNN / Transformer) ----
+gymnasium>=0.29
+pettingzoo>=1.24
+torch>=2.1
+torch-geometric>=2.4
+ray[rllib]>=2.10.0
+tensorboard>=2.14
+
+# ---- Visualization & dashboard ----
+plotly>=5.18
+streamlit>=1.30
+opencv-python>=4.8
+seaborn>=0.13
+imageio-ffmpeg>=0.4     # MP4 export
+
+# NOTE: AirSim / ROS2 backends are optional. See requirements-sim.txt and docs/installation.md

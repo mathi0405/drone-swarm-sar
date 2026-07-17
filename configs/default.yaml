@@ -1,0 +1,19 @@
+# Base configuration. Other configs override selected keys.
+env:
+  num_drones: 3
+  max_steps: 200
+  world:
+    size: 64
+    n_victims: 8
+    randomize_each_episode: true
+model:
+  arch: transformer_gnn
+train:
+  algo: mappo
+  policy_sharing: shared
+  centralized_critic: true
+task_alloc:
+  strategy: auction
+log:
+  experiment_name: swarm_sar_default
+  seeds: [0, 1, 2]

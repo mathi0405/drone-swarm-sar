@@ -1,0 +1,8 @@
+.git
+__pycache__/
+*.pyc
+results/figures/*
+assets/*.mp4
+assets/*.gif
+.venv/
+*.egg-info/
