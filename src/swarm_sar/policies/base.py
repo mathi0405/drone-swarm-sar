@@ -65,6 +65,21 @@ if HAS_TORCH:
             self.critic = nn.Sequential(nn.Linear(critic_in, hidden), nn.Tanh(),
                                         nn.Linear(hidden, hidden), nn.Tanh(),
                                         nn.Linear(hidden, 1))
+            # Orthogonal initialization (standard PPO stabilizer): sqrt(2) gain
+            # on hidden layers, 0.01 on the actor head so the initial policy is
+            # near-uniform, 1.0 on the value head.
+            self._orthogonal_init(self.actor, out_gain=0.01)
+            self._orthogonal_init(self.critic, out_gain=1.0)
+
+        @staticmethod
+        def _orthogonal_init(seq: nn.Sequential, out_gain: float) -> None:
+            linears = [m for m in seq.modules() if isinstance(m, nn.Linear)]
+            for m in linears[:-1]:
+                nn.init.orthogonal_(m.weight, gain=2 ** 0.5)
+                nn.init.zeros_(m.bias)
+            if linears:
+                nn.init.orthogonal_(linears[-1].weight, gain=out_gain)
+                nn.init.zeros_(linears[-1].bias)
 
         def forward(self, obs, graph=None, global_state=None, action_mask=None):
             z = self.encoder(obs) if graph is None else self.encoder(obs, graph)

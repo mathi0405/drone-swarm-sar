@@ -112,3 +112,17 @@ def test_curriculum_stages_never_exceed_base_difficulty():
     # final stage is exactly the benchmark
     assert stages[4].world.size == base.world.size
     assert stages[4].world.n_victims == base.world.n_victims
+
+
+def test_running_mean_std_normalizes_and_roundtrips():
+    import numpy as np
+
+    from swarm_sar.training.mappo import RunningMeanStd
+
+    rms = RunningMeanStd()
+    data = np.concatenate([np.full(50, -300.0), np.full(50, 100.0)])
+    rms.update(data)
+    normed = rms.normalize(data)
+    assert abs(float(np.mean(normed))) < 1e-6
+    assert abs(float(np.std(normed)) - 1.0) < 1e-3
+    assert np.allclose(rms.denormalize(normed), data, atol=1e-6)

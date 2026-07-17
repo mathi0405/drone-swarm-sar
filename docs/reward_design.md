@@ -56,18 +56,32 @@ and the biggest penalties in a competent episode are genuine safety failures.
 |----------------------|-------:|-----------:|---------|
 | explore (own new)    |   +1.0 |      ≤ 1.0 | one-shot per cell |
 | team coverage        |   +0.5 |      ≤ 0.5 | one-shot per cell |
-| duplicate search     |   −0.1 |     ≥ −0.1 | recurring |
+| duplicate search     |  −0.05 |    ≥ −0.05 | recurring |
 | frontier             |  +0.05 |      ≤ 0.2 | recurring |
 | approach victim      |   +2.0 |     ≤ ±2.0 | recurring |
 | rescue dwell         |   +2.0 |      ≤ 2.0 | recurring |
 | separation / near-miss | +0.04 / −2.0 | bounded | recurring |
-| useful broadcast     |   +1.0 |      ≤ 1.0 | only for *new* info |
+| useful broadcast     |   +1.0 |      ≤ 1.0 | EXPLICIT + *new* info only |
 | time / hover / idle  | −0.02 / −0.01 / −0.05 | bounded | recurring |
-| **victim detected**  |   +2.0 |        — | event |
-| **victim rescued**   |  +10.0 × urgency ∈ [0.15, 1.0] | — | event |
-| **mission complete** |  +20.0 |        — | event |
-| **collision**        |  −10.0 |        — | event |
-| **hazard / battery** | −5.0 / −100.0 | — | event |
+| **victim detected**  |   +5.0 |        — | event |
+| **victim rescued**   |  +50.0 × urgency ∈ [0.26, 1.0] | — | event |
+| **mission complete** | +100.0 |        — | event |
+| **collision**        |  −10.0 |        — | event, contact ONSET only |
+| **hazard entry / dwell** | −5.0 / −0.5 | — | onset event / recurring |
+| **battery depleted** | −100.0 |        — | event |
+
+Safety penalties are events, not recurring bleeds: a drone pair that stays
+stuck pays the collision once and then bounded near-miss shaping (−2/step)
+until it separates; entering smoke costs −5, remaining costs −0.5/step. The
+enforced economic invariant (tests/test_reward_engine.py): even a
+floor-urgency, minimum-severity rescue (+13) out-earns 100 steps of maximum
+travel drag (−7), so "go rescue" stays a winning gradient to the last step —
+while a hover-forever policy still scores negative, as it should.
+
+The broadcast credit is earned only by EXPLICIT broadcast actions carrying
+new information; in the neural-training configs the scripted heartbeat
+(`comm.auto_broadcast`) is disabled entirely, so communication behavior is
+learned, not inherited.
 
 Sanity checks are enforced by `tests/test_reward_engine.py`, including an
 integration test asserting a competent policy earns a **positive** episode

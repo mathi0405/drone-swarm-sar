@@ -66,7 +66,8 @@ Following an in-depth review (see [`docs/RESEARCH_ROADMAP.md`](docs/RESEARCH_ROA
 - **Vectorized exact-LOS sensing** — per-radius precomputed Bresenham ray tables turn the sensing sweep into NumPy fancy indexing (~1.7× faster env steps despite a much richer observation).
 - **Hyperparameter search** — `scripts/tune_hparams.py` (Optuna TPE) emits a study report and a ready-to-train best-config YAML (`pip install -e ".[tune]"`).
 - **Audited, bounded reward** — every dense term normalized to O(weight) per step with a documented before/after audit ([`docs/reward_design.md`](docs/reward_design.md)); **triage-style time-critical rescue** (severity × time-decay) turns rescue ordering into a real scheduling problem.
-- **Performance-gated curriculum** — stages advance when the policy *masters* its current stage (deterministic per-stage eval vs. rescue-rate thresholds), with the linear schedule as a fallback floor; every transition is logged.
+- **Performance-gated curriculum** — stages advance when the rolling training-window rescue rate at the current stage clears its threshold (linear schedule as fallback floor), a fraction of envs stays pinned to the benchmark to soften distribution shocks, and every transition is logged.
+- **MAPPO done properly** — running value normalization with clipped Huber loss, a compact ~50-dim *privileged* critic state (true victim/drone/mission summary) instead of concatenated observation stacks, episode clock in the observation, truncation bootstrapping, LR + imitation-coefficient annealing, orthogonal initialization, per-minibatch advantage normalization, and a masked return-to-base macro-action so autopilot steps never poison the PPO buffer.
 - **SIS validated** — ranking stable under weight perturbation (ρ=0.96), Pareto analysis, geometric-mean justification.
 - **Sharper detection** — false positives + confirmation; principled path-efficiency & documented safety scaling.
 

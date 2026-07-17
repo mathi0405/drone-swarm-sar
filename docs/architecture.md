@@ -18,7 +18,8 @@ obs, rewards, term, trunc, info = env.step({agent: action}) # parallel step
 ```
 
 - **Observation** (per drone, `env.obs_dim` floats — an 8-frame temporal stack):
-  own noisy-GPS pose, velocity, altitude, battery; a victim-belief summary
+  own noisy-GPS pose, velocity, altitude, battery, episode clock (t/T) and
+  return-to-base commitment flag; a victim-belief summary
   (count, density, two nearest believed victims); locally sensed fire/smoke
   distance and density; an egocentric `obs_map_patch`² map patch with three
   channels (occupancy, own explored mask, own victim belief); LiDAR (8 rays);

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import copy
 import time
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -162,6 +163,9 @@ def stage_env_cfg(base, stage: int):
         cfg.comm.packet_loss = min(cfg.comm.packet_loss, base.comm.packet_loss)
         cfg.dwell_steps_to_rescue = min(cfg.dwell_steps_to_rescue,
                                         base.dwell_steps_to_rescue)
+    # Keep the privileged critic-state dimension constant across stages.
+    cfg.global_state_max_victims = (base.global_state_max_victims
+                                    or base.world.n_victims)
     return cfg
 
 
@@ -195,6 +199,43 @@ def merged_advantages_returns(bufs: list[RolloutBuffer], gamma: float, lam: floa
     return adv, ret
 
 
+class RunningMeanStd:
+    """Running return statistics for value normalization (Yu et al., 2022 list
+    this as MAPPO's single most important implementation detail).
+
+    The critic is trained on normalized targets; its outputs are denormalized
+    before entering GAE, so advantages stay in raw reward units.
+    """
+
+    def __init__(self):
+        self.mean = 0.0
+        self.var = 1.0
+        self.count = 1e-4
+
+    def update(self, x) -> None:
+        x = np.asarray(x, dtype=np.float64)
+        if x.size == 0:
+            return
+        batch_mean, batch_var, batch_count = float(x.mean()), float(x.var()), x.size
+        delta = batch_mean - self.mean
+        total = self.count + batch_count
+        new_mean = self.mean + delta * batch_count / total
+        m_a = self.var * self.count
+        m_b = batch_var * batch_count
+        m2 = m_a + m_b + delta ** 2 * self.count * batch_count / total
+        self.mean, self.var, self.count = new_mean, m2 / total, total
+
+    @property
+    def std(self) -> float:
+        return float(np.sqrt(self.var + 1e-8))
+
+    def normalize(self, x):
+        return (x - self.mean) / self.std
+
+    def denormalize(self, x):
+        return x * self.std + self.mean
+
+
 class MAPPOTrainer:
     def __init__(self, cfg: Config, resume: str = None):
         if not HAS_TORCH:
@@ -207,15 +248,22 @@ class MAPPOTrainer:
         # Samples the per-edge packet-loss mask applied to the learned comm
         # channel (kept separate from env rngs so it never perturbs the sim).
         self._np_rng = np.random.default_rng(cfg.train.seed + 977)
-        # Curriculum state: current stage and the highest stage unlocked by
-        # performance gating (see _apply_curriculum / _update_curriculum_gate).
+        # Curriculum state: current stage, the highest stage unlocked by
+        # performance gating, a rolling window of training-episode rescue
+        # rates at the current stage, and per-env bookkeeping for the
+        # mixed-stage worker split.
         self._cur_stage = -1
         self._perf_stage = 0
+        self._stage_rescues: deque = deque(maxlen=30)
+        self._stage_env_count = self.num_envs
+        # Value normalization statistics (see RunningMeanStd).
+        self.ret_norm = RunningMeanStd()
 
         # Local dummy env for metadata
         self.env = SARSwarmEnv(copy.deepcopy(cfg.env), seed=cfg.train.seed)
         self.env.reset(seed=cfg.train.seed)
         self.n = self.env.n
+        self._env_sizes = [cfg.env.world.size] * self.num_envs
 
         if self.num_envs > 0:
             self.vec_env = SubprocVecEnv(
@@ -225,8 +273,12 @@ class MAPPOTrainer:
         else:
             self.vec_env = None
 
+        # The critic consumes the env's COMPACT privileged global state, not
+        # the concatenated observation stacks (which forced it to re-learn
+        # perception from thousands of redundant dims).
         spec = PolicySpec(obs_dim=self.env.obs_dim, n_actions=self.env.n_actions,
-                          global_dim=self.env.obs_dim * self.n, n_agents=self.n)
+                          global_dim=int(self.env.global_state().shape[0]),
+                          n_agents=self.n)
         self.spec = spec
         # shared vs independent parameters
         centralized = bool(cfg.train.centralized_critic)
@@ -252,18 +304,22 @@ class MAPPOTrainer:
                     self.policies[0].load_state_dict(ckpt["state_dict"], strict=False)
                 print(f"resumed from {resume}")
 
-    def _global_state(self, obs: dict[str, np.ndarray]) -> np.ndarray:
-        return np.concatenate([obs[a].flatten() for a in self.env.possible_agents], dtype=np.float32)
+    @staticmethod
+    def _info_global_state(infos) -> np.ndarray:
+        """Extract the env-provided compact privileged state from an info dict."""
+        return np.asarray(infos["global_state"], dtype=np.float32)
 
-    def _adjacency(self, obs: dict[str, np.ndarray]) -> np.ndarray:
+    def _adjacency(self, obs: dict[str, np.ndarray], env_idx: int = 0) -> np.ndarray:
         # Observations contain a flattened temporal stack.  Use the newest GPS
         # frame and convert its [0, 1] coordinates back to world units before
-        # applying the radio-range threshold.  Comparing normalized positions
-        # directly with a metre-valued range made every drone appear connected.
+        # applying the radio-range threshold.  World size is PER ENV: with
+        # mixed-stage workers, benchmark envs and stage envs differ.
         frame_dim = self.env._compute_obs_dim()
+        size = self._env_sizes[env_idx] if env_idx < len(self._env_sizes) \
+            else self.cfg.env.world.size
         pos = np.array([
             (obs[a][-frame_dim:-frame_dim + 2] if obs[a].ndim == 1 else obs[a][-1, :2])
-            * self.cfg.env.world.size
+            * size
             for a in self.env.possible_agents
         ], dtype=np.float32)
         return comm_adjacency(pos, self.cfg.env.comm.range_m,
@@ -302,7 +358,8 @@ class MAPPOTrainer:
                 [self.cfg.task_alloc.strategy] * self.num_envs,
                 [self.cfg.train.seed + env_idx * 1009 for env_idx in range(self.num_envs)]
             )
-        observations, _ = self.vec_env.reset()
+        observations, reset_infos = self.vec_env.reset()
+        global_states = [self._info_global_state(info) for info in reset_infos]
         no_expert_moves = [0] * self.n
 
         for _ in range(steps):
@@ -315,9 +372,9 @@ class MAPPOTrainer:
             if self.cfg.train.policy_sharing == "independent":
                 for env_idx in range(self.num_envs):
                     obs = observations[env_idx]
-                    gs_np = self._global_state(obs)
+                    gs_np = global_states[env_idx]
                     gs = torch.tensor(gs_np, device=self.device).float()
-                    adj = self._adjacency(obs)
+                    adj = self._adjacency(obs, env_idx)
                     masks_np = masks_list[env_idx]
                     expert_moves = (self._expert_moves(expert_acts_list[env_idx], masks_np)
                                     if use_expert else no_expert_moves)
@@ -331,7 +388,8 @@ class MAPPOTrainer:
                         acts_by_env[env_idx][a] = ac
                         action_counts[ac] += 1
                         step_cache_by_env[env_idx].append(
-                            (i, obs[a], ac, float(logp.item()), float(value.item()),
+                            (i, obs[a], ac, float(logp.item()),
+                             self.ret_norm.denormalize(float(value.item())),
                              gs_np, adj, masks_np[i], expert_moves[i])
                         )
             else:
@@ -339,8 +397,8 @@ class MAPPOTrainer:
                 rows, states, masks, graphs, meta = [], [], [], [], []
                 for env_idx in range(self.num_envs):
                     obs = observations[env_idx]
-                    gs_np = self._global_state(obs)
-                    adj = self._adjacency(obs)
+                    gs_np = global_states[env_idx]
+                    adj = self._adjacency(obs, env_idx)
                     masks_np = masks_list[env_idx]
                     expert_moves = (self._expert_moves(expert_acts_list[env_idx], masks_np)
                                     if use_expert else no_expert_moves)
@@ -366,7 +424,8 @@ class MAPPOTrainer:
                     action_counts[ac] += 1
                     step_cache_by_env[env_idx].append(
                         (i, o_np, ac, float(logp[row_idx].item()),
-                         float(value[row_idx].item()), gs_np, adj, mask_np, expert_ac)
+                         self.ret_norm.denormalize(float(value[row_idx].item())),
+                         gs_np, adj, mask_np, expert_ac)
                     )
 
             # SubprocVecEnv batches the execution
@@ -377,54 +436,78 @@ class MAPPOTrainer:
                 rew = rews_list[env_idx]
                 term = terms_list[env_idx]
                 trunc = truncs_list[env_idx]
+                info = infos_list[env_idx]
                 env_steps += 1
                 ep_returns[env_idx] += float(sum(rew.values()))
                 done_flags = {a: float(term.get(a, False) or trunc.get(a, False))
                               for a in self.env.possible_agents}
 
-                # On episode end the worker auto-resets and `nobs` is already the
-                # fresh episode's first observation; the terminal observation is
-                # not needed here (GAE zeroes the bootstrap via the done flag).
+                # On episode end the worker auto-resets: `nobs`/`global_state`
+                # already belong to the fresh episode.
                 observations[env_idx] = nobs
+                global_states[env_idx] = self._info_global_state(info)
+
+                # Truncation bootstrapping: a time-limit cutoff is not a true
+                # terminal state, so fold gamma * V(s_T) (from the terminal
+                # privileged state) into the final reward instead of zeroing.
+                trunc_bonus = 0.0
+                terminated_all = all(term.values())
+                truncated_all = all(trunc.values())
+                if truncated_all and not terminated_all and self.cfg.train.centralized_critic:
+                    gs_term = info.get("terminal_global_state")
+                    if gs_term is not None:
+                        gs_term_t = torch.tensor(np.asarray(gs_term, dtype=np.float32),
+                                                 device=self.device).unsqueeze(0)
+                        with torch.no_grad():
+                            v_term = float(self.policies[0].critic(gs_term_t).item())
+                        trunc_bonus = self.cfg.train.gamma * self.ret_norm.denormalize(v_term)
+
                 for (i, o, ac, lp, v, gs_np, graph_np, mask_np, expert_ac) in step_cache_by_env[env_idx]:
                     b = bufs[env_idx * self.n + i]
                     agent_name = self.env.possible_agents[i]
                     b.obs.append(o); b.actions.append(ac); b.logps.append(lp)
                     b.values.append(v)
-                    b.rewards.append(rew.get(agent_name, 0.0) * self.cfg.train.reward_scale)
+                    b.rewards.append((rew.get(agent_name, 0.0) + trunc_bonus)
+                                     * self.cfg.train.reward_scale)
                     b.dones.append(done_flags.get(agent_name, 0.0)); b.global_state.append(gs_np)
                     b.graphs.append(graph_np); b.action_masks.append(mask_np)
                     b.expert_actions.append(expert_ac)
                 # Check if episode ended based on `term` and `trunc`
                 # If so, SubprocVecEnv already auto-reset the env behind the scenes.
-                is_done = all(term.values()) or all(trunc.values())
+                is_done = terminated_all or truncated_all
                 if is_done:
                     completed.append(float(ep_returns[env_idx]))
                     ep_returns[env_idx] = 0.0
+                    # Rolling curriculum-gate window: training-episode rescue
+                    # rate at the CURRENT stage (benchmark-pinned envs excluded).
+                    if env_idx < self._stage_env_count:
+                        agent0 = self.env.possible_agents[0]
+                        rr = info.get(agent0, {}).get("rescue_rate")
+                        if rr is not None:
+                            self._stage_rescues.append(float(rr))
 
-        # Compute bootstrap values for GAE
+        # Compute bootstrap values for GAE (denormalized to raw return units)
         bootstraps = [[0.0] * self.n for _ in range(self.num_envs)]
         masks_list = self.vec_env.action_masks()
 
         if self.cfg.train.policy_sharing == "independent":
             for env_idx in range(self.num_envs):
                 obs = observations[env_idx]
-                gs_np = self._global_state(obs)
-                gs = torch.tensor(gs_np, device=self.device).float().unsqueeze(0)
+                gs = torch.tensor(global_states[env_idx], device=self.device).float().unsqueeze(0)
                 masks_np = masks_list[env_idx]
                 for i, a in enumerate(self.env.possible_agents):
                     o = torch.tensor(obs[a], device=self.device).float().unsqueeze(0)
                     mask = self._mask_tensor(masks_np[i:i + 1])
                     with torch.no_grad():
                         _, _, value = self.policies[i].act(o, global_state=gs, action_mask=mask)
-                    bootstraps[env_idx][i] = float(value.item())
+                    bootstraps[env_idx][i] = self.ret_norm.denormalize(float(value.item()))
         else:
             policy = self.policies[0]
             rows, states, masks, graphs = [], [], [], []
             for env_idx in range(self.num_envs):
                 obs = observations[env_idx]
-                gs_np = self._global_state(obs)
-                adj = self._adjacency(obs)
+                gs_np = global_states[env_idx]
+                adj = self._adjacency(obs, env_idx)
                 masks_np = masks_list[env_idx]
                 for i, a in enumerate(self.env.possible_agents):
                     rows.append(obs[a])
@@ -441,7 +524,8 @@ class MAPPOTrainer:
 
             for env_idx in range(self.num_envs):
                 for i in range(self.n):
-                    bootstraps[env_idx][i] = float(value[env_idx * self.n + i].item())
+                    bootstraps[env_idx][i] = self.ret_norm.denormalize(
+                        float(value[env_idx * self.n + i].item()))
 
         # Apply bootstrap values to buffers
         for env_idx in range(self.num_envs):
@@ -469,17 +553,39 @@ class MAPPOTrainer:
         mean_ret = float(np.mean(completed)) if completed else float(np.mean(ep_returns))
         return bufs, mean_ret
 
+    def _comm_gate_cost(self, policy):
+        """Mean send-gate activation across the policy's learned comm heads.
+
+        Adding this to the loss (weighted by ``comm_gate_coef``) puts real
+        gradient pressure toward silence — previously the bandwidth cost was
+        defined but never used, so "learning when to speak" had no gradient.
+        """
+        from swarm_sar.policies.comm_head import LearnedCommHead
+        terms = [m.last_gate_mean for m in policy.modules()
+                 if isinstance(m, LearnedCommHead) and m.last_gate_mean is not None]
+        if not terms:
+            return None
+        return torch.stack(terms).mean()
+
     def _update_policy_on_buffer(self, policy, b: RolloutBuffer, adv, ret, epochs: int,
-                                 group_size: int | None = None, entropy_coef: float = None):
+                                 group_size: int | None = None, entropy_coef: float = None,
+                                 imitation_coef: float = None):
         if entropy_coef is None:
             entropy_coef = self.cfg.train.entropy_coef
         c = self.cfg.train
+        if imitation_coef is None:
+            imitation_coef = c.imitation_coef
         obs = torch.tensor(np.array(b.obs), device=self.device).float()
         gs = torch.tensor(np.array(b.global_state), device=self.device).float()
         act = torch.tensor(b.actions, device=self.device).long()
         old_lp = torch.tensor(b.logps, device=self.device).float()
         adv_t = torch.tensor(adv, device=self.device).float()
-        ret_t = torch.tensor(ret, device=self.device).float()
+        # Value targets and old value predictions in NORMALIZED space; the
+        # running stats were updated with this batch's returns in update().
+        ret_t = torch.tensor(self.ret_norm.normalize(np.asarray(ret)),
+                             device=self.device).float()
+        val_old_t = torch.tensor(self.ret_norm.normalize(np.asarray(b.values)),
+                                 device=self.device).float()
         mask = (torch.tensor(np.array(b.action_masks), device=self.device).float()
                 if b.action_masks else None)
 
@@ -507,8 +613,12 @@ class MAPPOTrainer:
 
                 mb_obs = obs[idx]; mb_gs = gs[idx]; mb_act = act[idx]
                 mb_old_lp = old_lp[idx]; mb_adv = adv_t[idx]; mb_ret = ret_t[idx]
+                mb_val_old = val_old_t[idx]
                 mb_mask = mask[idx] if mask is not None else None
                 mb_expert = expert_t[idx] if expert_t is not None else None
+
+                # Per-minibatch advantage renormalization (PPO stabilizer).
+                mb_adv = (mb_adv - mb_adv.mean()) / (mb_adv.std() + 1e-8)
 
                 graph = None
                 if b.graphs and self.cfg.train.policy_sharing != "independent":
@@ -530,19 +640,29 @@ class MAPPOTrainer:
                 s1 = ratio * mb_adv
                 s2 = torch.clamp(ratio, 1 - c.clip, 1 + c.clip) * mb_adv
                 pi_loss = -torch.min(s1, s2).mean()
-                v_loss = ((value.squeeze(-1) - mb_ret) ** 2).mean()
+                # Clipped Huber value loss on normalized targets.
+                v_pred = value.squeeze(-1)
+                v_clipped = mb_val_old + torch.clamp(v_pred - mb_val_old, -c.clip, c.clip)
+                v_loss = torch.max(
+                    nn.functional.huber_loss(v_pred, mb_ret, reduction="none"),
+                    nn.functional.huber_loss(v_clipped, mb_ret, reduction="none"),
+                ).mean()
                 ent = dist.entropy().mean()
                 imitation_loss = (
                     nn.functional.cross_entropy(logits, mb_expert)
-                    if mb_expert is not None and c.imitation_coef > 0 else
+                    if mb_expert is not None and imitation_coef > 0 else
                     torch.tensor(0.0, device=self.device)
                 )
                 loss = (
                     pi_loss +
                     c.value_coef * v_loss -
                     entropy_coef * ent +
-                    c.imitation_coef * imitation_loss
+                    imitation_coef * imitation_loss
                 )
+                if c.comm_gate_coef > 0:
+                    gate_cost = self._comm_gate_cost(policy)
+                    if gate_cost is not None:
+                        loss = loss + c.comm_gate_coef * gate_cost
                 self.opt.zero_grad(); loss.backward()
                 nn.utils.clip_grad_norm_([p for pol in self.policies for p in pol.parameters()],
                                          c.grad_clip)
@@ -550,7 +670,8 @@ class MAPPOTrainer:
         return (float(pi_loss.item()), float(v_loss.item()), float(ent.item()),
                 float(imitation_loss.item()))
 
-    def update(self, buffers: list[RolloutBuffer], entropy_coef: float = None) -> dict:
+    def update(self, buffers: list[RolloutBuffer], entropy_coef: float = None,
+               imitation_coef: float = None) -> dict:
         if entropy_coef is None:
             entropy_coef = self.cfg.train.entropy_coef
         c = self.cfg.train
@@ -560,11 +681,15 @@ class MAPPOTrainer:
             if not merged.rewards:
                 return stats
             adv, ret = merged_advantages_returns(buffers, c.gamma, c.gae_lambda, group_size=self.n)
+            self.ret_norm.update(ret)
             pi, v, ent, im = self._update_policy_on_buffer(
-                self.policies[0], merged, adv, ret, c.epochs, group_size=self.n, entropy_coef=entropy_coef
+                self.policies[0], merged, adv, ret, c.epochs, group_size=self.n,
+                entropy_coef=entropy_coef, imitation_coef=imitation_coef
             )
             stats["pi_loss"] += pi; stats["v_loss"] += v; stats["entropy"] += ent
             stats["imitation_loss"] = im
+            stats["value_norm_mean"] = self.ret_norm.mean
+            stats["value_norm_std"] = self.ret_norm.std
             return stats
 
         for i, b in enumerate(buffers):
@@ -572,8 +697,10 @@ class MAPPOTrainer:
                 continue
             adv, ret = _gae(b.rewards, b.values, b.dones, c.gamma, c.gae_lambda, bootstrap=b.bootstrap_value)
             adv = (adv - adv.mean()) / (adv.std() + 1e-8)
+            self.ret_norm.update(ret)
             pi, v, ent, im = self._update_policy_on_buffer(
-                self.policies[i % self.n], b, adv, ret, c.epochs, group_size=1, entropy_coef=entropy_coef
+                self.policies[i % self.n], b, adv, ret, c.epochs, group_size=1,
+                entropy_coef=entropy_coef, imitation_coef=imitation_coef
             )
             stats["pi_loss"] += pi
             stats["v_loss"] += v
@@ -594,7 +721,8 @@ class MAPPOTrainer:
             [self.cfg.task_alloc.strategy] * self.num_envs,
             [self.cfg.train.seed + ep * 1009 for ep in range(self.num_envs)]
         )
-        observations, _ = self.vec_env.reset()
+        observations, reset_infos = self.vec_env.reset()
+        global_states = [self._info_global_state(info) for info in reset_infos]
 
         rows, actions, masks, graphs, states = [], [], [], [], []
         # We need to collect `episodes` total full episodes
@@ -607,7 +735,7 @@ class MAPPOTrainer:
 
             for env_idx in range(self.num_envs):
                 obs = observations[env_idx]
-                adj = self._adjacency(obs)
+                adj = self._adjacency(obs, env_idx)
                 mask_np = masks_list[env_idx]
                 expert = expert_acts_list[env_idx]
                 # _expert_moves already projects illegal expert moves onto the
@@ -617,12 +745,12 @@ class MAPPOTrainer:
                 actions.extend(parsed)
                 masks.extend(mask_np)
                 graphs.extend([adj for _ in range(self.n)])
-                gs = self._global_state(obs)
-                states.extend([gs for _ in range(self.n)])
+                states.extend([global_states[env_idx] for _ in range(self.n)])
 
             nobs_list, rews_list, terms_list, truncs_list, infos_list = self.vec_env.step(expert_acts_list)
             for env_idx in range(self.num_envs):
                 observations[env_idx] = nobs_list[env_idx]
+                global_states[env_idx] = self._info_global_state(infos_list[env_idx])
                 term = terms_list[env_idx]
                 trunc = truncs_list[env_idx]
                 if all(term.values()) or all(trunc.values()):
@@ -685,11 +813,15 @@ class MAPPOTrainer:
     def _apply_curriculum(self, iteration: int, total_iters: int) -> None:
         """Move to the target curriculum stage (never backwards).
 
-        ``curriculum_mode="performance"`` advances a stage as soon as the
-        policy masters it (deterministic eval on the *current stage* clears the
-        configured rescue threshold), with the linear schedule as a fallback
-        floor so a stalled run still reaches full difficulty within budget.
-        ``"linear"`` reproduces the fixed 20%-per-stage schedule.
+        ``curriculum_mode="performance"`` advances a stage once the rolling
+        training-window rescue rate clears its threshold, with the linear
+        schedule as a fallback floor so a stalled run still reaches full
+        difficulty within budget.  ``"linear"`` is the fixed 20%-per-stage
+        schedule.
+
+        To soften the distribution shock of a hard stage switch, a fraction of
+        the parallel envs (``curriculum_benchmark_frac``) stays pinned to the
+        full benchmark at all times.
         """
         if not self.cfg.train.curriculum:
             return
@@ -699,32 +831,49 @@ class MAPPOTrainer:
         if target == self._cur_stage:
             return
         self._cur_stage = target
+        self._stage_rescues.clear()          # gate stats restart per stage
         cfg = self._stage_env_cfg(target)
+        n_bench = 0
+        if target < self.N_CURRICULUM_STAGES - 1 and self.num_envs >= 4:
+            n_bench = max(1, int(self.num_envs * self.cfg.train.curriculum_benchmark_frac))
+        self._stage_env_count = self.num_envs - n_bench
+        base = copy.deepcopy(self._base_env_cfg)
+        base.global_state_max_victims = self._base_env_cfg.world.n_victims
+        worker_cfgs = ([copy.deepcopy(cfg) for _ in range(self._stage_env_count)]
+                       + [copy.deepcopy(base) for _ in range(n_bench)])
+        self._env_sizes = ([cfg.world.size] * self._stage_env_count
+                           + [base.world.size] * n_bench)
         print(f"  [curriculum] entering stage {target + 1}/{self.N_CURRICULUM_STAGES} "
               f"(size {cfg.world.size}, victims {cfg.world.n_victims}, "
               f"faults {'on' if cfg.faults.enable else 'off'}, "
-              f"loss {cfg.comm.packet_loss:.2f})")
+              f"loss {cfg.comm.packet_loss:.2f}, benchmark envs {n_bench})")
         self.cfg.env = cfg
         if self.vec_env:
-            self.vec_env.set_cfg([copy.deepcopy(cfg) for _ in range(self.num_envs)])
+            self.vec_env.set_cfg(worker_cfgs)
 
     def _update_curriculum_gate(self) -> dict:
-        """Evaluate on the CURRENT stage and unlock the next one if mastered."""
+        """Unlock the next stage from the rolling training-window rescue rate.
+
+        A 2-episode deterministic eval was a coin flip for 1-2 victim stages;
+        the rolling window aggregates >= curriculum_gate_min_episodes real
+        training episodes at the current stage instead.
+        """
         thresholds = self.cfg.train.curriculum_rescue_thresholds
         if (self.cfg.train.curriculum_mode != "performance"
+                or not self.cfg.train.curriculum
                 or self._cur_stage >= self.N_CURRICULUM_STAGES - 1
-                or self._cur_stage >= len(thresholds)):
-            return {}
-        stage_stats = self.evaluate_policy(
-            episodes=2, seed=20_000 + self._cur_stage,
-            env_cfg=self._stage_env_cfg(self._cur_stage))
-        rescue = stage_stats["eval_rescue_rate"]
+                or self._cur_stage >= len(thresholds)
+                or len(self._stage_rescues) < self.cfg.train.curriculum_gate_min_episodes):
+            return ({"stage_train_rescue_rate": float(np.mean(self._stage_rescues))}
+                    if self._stage_rescues else {})
+        rescue = float(np.mean(self._stage_rescues))
         threshold = thresholds[self._cur_stage]
         if rescue >= threshold and self._perf_stage <= self._cur_stage:
             self._perf_stage = self._cur_stage + 1
             print(f"  [curriculum] stage {self._cur_stage + 1} mastered "
-                  f"(rescue {rescue:.2f} >= {threshold:.2f}) — unlocking next stage")
-        return {"stage_eval_rescue_rate": rescue}
+                  f"(train rescue {rescue:.2f} over {len(self._stage_rescues)} eps "
+                  f">= {threshold:.2f}) — unlocking next stage")
+        return {"stage_train_rescue_rate": rescue}
 
     @torch.no_grad()
     def evaluate_policy(self, episodes: int = 3, seed: int = 10_000,
@@ -794,14 +943,28 @@ class MAPPOTrainer:
         for it in range(iters):
             self._apply_curriculum(it, iters)
 
-            # Linear entropy decay
             progress = it / max(1, iters - 1)
+            # Linear entropy decay
             current_entropy_coef = max(0.001, c.entropy_coef * (1.0 - progress))
+            # Linear learning-rate annealing with a floor
+            current_lr = c.lr * max(c.lr_anneal_floor, 1.0 - progress)
+            for group in self.opt.param_groups:
+                group["lr"] = current_lr
+            # Kickstarter-style imitation annealing: the pull toward the
+            # heuristic decays to zero over the first `imitation_anneal_frac`
+            # of training so PPO can eventually surpass it.
+            anneal_frac = max(1e-6, c.imitation_anneal_frac)
+            current_imitation = c.imitation_coef * max(0.0, 1.0 - progress / anneal_frac)
 
             bufs, ep_ret = self.collect(c.rollout_len)
-            stats = self.update(bufs, entropy_coef=current_entropy_coef)
+            stats = self.update(bufs, entropy_coef=current_entropy_coef,
+                                imitation_coef=current_imitation)
             stats["ep_return"] = ep_ret
+            stats["lr"] = current_lr
+            stats["imitation_coef"] = current_imitation
             stats.update(self.last_collect_stats)
+            # Curriculum gate: rolling training-window rescue at current stage.
+            stats.update(self._update_curriculum_gate())
             print(f"Iter {it}/{iters} | Ep Ret: {ep_ret:.2f} | V Loss: {stats.get('v_loss', 0.0):.4f} | Pi Loss: {stats.get('pi_loss', 0.0):.4f} | Ent: {stats.get('entropy', 0.0):.4f}")
 
             # Action distribution telemetry
@@ -831,8 +994,6 @@ class MAPPOTrainer:
                 if key > best_key:
                     best_key = key
                     self.save(checkpoint_dir / "best.pt")
-                # Curriculum gate: test mastery of the CURRENT stage.
-                stats.update(self._update_curriculum_gate())
             stats["curriculum_stage"] = float(self._cur_stage)
 
             if logger is not None:

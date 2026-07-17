@@ -23,7 +23,7 @@ class ObservationEngine:
 
     def get_obs(self, env):
         # Per-drone frame layout (see SARSwarmEnv._compute_obs_dim):
-        #   own state (7) + victim info (9) + hazards (4)
+        #   own state (8) + victim info (9) + hazards (4)
         #   + egocentric map patch (3 x P x P) + LiDAR (8)
         #   + peers (6 * k) + comms (4)
         k = env.cfg.k_nearest_drones
@@ -36,12 +36,18 @@ class ObservationEngine:
             d = env.drones[i]
             s = d.kinematics
 
-            # Own state
+            # Own state.  The clock (t/max_steps) is essential: with per-step
+            # penalties and hard truncation, V(s) depends strongly on time
+            # remaining, which the network otherwise cannot observe.  The
+            # `returning` flag tells the policy it is committed to the
+            # return-to-base macro-action.
             gps = d.gps_position() / S
             own_state = [
                 gps[0], gps[1], s.alt / env.cfg.world.max_altitude_m,
-                s.vel[0] / env.cfg.max_speed_mps, s.vel[1] / env.cfg.max_speed_mps, 0.0, # vz dummy
-                d.battery.soc
+                s.vel[0] / env.cfg.max_speed_mps, s.vel[1] / env.cfg.max_speed_mps,
+                env.t / max(1, env.cfg.max_steps),
+                d.battery.soc,
+                float(d.mission.returning),
             ]
 
             # Victim info

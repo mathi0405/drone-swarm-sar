@@ -77,3 +77,26 @@ def test_full_mission_returns_positive_total():
     summary = env.episode_summary()
     assert summary["rescue_rate"] > 0.5     # the heuristic is competent here
     assert total > 0.0                       # ...and the reward reflects it
+
+
+def test_worst_case_rescue_beats_travel_drag():
+    # Even a floor-urgency, minimum-severity rescue must out-earn ~100 steps
+    # of maximum travel drag (full duplicate overlap + time pressure) — the
+    # economics that keep "go rescue" a winning gradient late in an episode.
+    r = RewardConfig()
+    eng = RewardEngine(r)
+    min_urgency = r.rescue_urgency_floor * (0.5 + 0.5 * 0.3)   # decay 0, sev 0.3
+    worst_rescue = eng.compute(RewardInputs(victim_rescued=True,
+                                            rescue_urgency=min_urgency))
+    travel_drag_step = abs(r.duplicate_explore) + abs(r.time_penalty)
+    assert worst_rescue > 100 * travel_drag_step
+
+
+def test_hazard_entry_and_dwell_are_separate_events():
+    r = RewardConfig()
+    eng = RewardEngine(r)
+    entry = eng.compute(RewardInputs(hazard_entered=True))
+    dwell = eng.compute(RewardInputs(hazard_dwell=True))
+    assert np.isclose(entry - r.time_penalty, r.hazard_penalty)
+    assert np.isclose(dwell - r.time_penalty, r.hazard_dwell)
+    assert abs(r.hazard_dwell) < abs(r.hazard_penalty)   # dwell is the small one

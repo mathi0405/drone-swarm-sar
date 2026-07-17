@@ -83,7 +83,13 @@ def episode_metrics(log, energy_budget: float | None = None, grid_size: int = 64
     # that ideal distance over the distance actually travelled, in [0, 1].
     explored_cells = coverage * grid_size * grid_size
     ideal_distance = explored_cells / max(1.0, sensor_swath_cells)
-    path_efficiency = float(np.clip(ideal_distance / (path + 1e-6), 0, 1))
+    # Guard the degenerate case: a swarm that barely moves has tiny ideal AND
+    # tiny actual distance, and the ratio rounded to a fake perfect 1.0.  A
+    # policy that explores less than 15% of the map earns zero efficiency.
+    if coverage < 0.15 or path < 1.0:
+        path_efficiency = 0.0
+    else:
+        path_efficiency = float(np.clip(ideal_distance / (path + 1e-6), 0, 1))
     collision_rate = s["collisions"] / steps
     energy = s["energy_wh"]
     expl_entropy = exploration_entropy(frames, grid_size)

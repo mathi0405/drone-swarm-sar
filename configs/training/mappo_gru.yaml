@@ -1,6 +1,10 @@
 # MAPPO + GRU recurrent baseline (ablation partner for the Transformer:
 # same temporal frame stack, recurrence instead of attention).
-env: { num_drones: 3, max_steps: 200 }
+env:
+  num_drones: 3
+  max_steps: 200
+  # Neural policies must EARN communication: no scripted heartbeat sharing.
+  comm: { auto_broadcast: false }
 model: { arch: gru, hidden_dim: 128 }
 train:
   algo: mappo

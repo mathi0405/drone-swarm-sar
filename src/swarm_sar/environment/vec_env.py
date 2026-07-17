@@ -38,7 +38,13 @@ def worker(remote, parent_remote, cfg: EnvConfig, seed: int):
                     if pending_cfg is not None:
                         apply_cfg(pending_cfg)
                         pending_cfg = None
-                    obs, _ = env.reset()
+                    # Keep the TERMINAL global state (for truncation value
+                    # bootstrapping) and replace the outgoing global state with
+                    # the fresh episode's, matching the reset observation.
+                    info = dict(info)
+                    info["terminal_global_state"] = info.get("global_state")
+                    obs, reset_info = env.reset()
+                    info["global_state"] = reset_info["global_state"]
                     if actor is not None:
                         actor = HeuristicSwarmController(env, strategy=actor_strategy, seed=seed)
                 remote.send((obs, reward, term, trunc, info))

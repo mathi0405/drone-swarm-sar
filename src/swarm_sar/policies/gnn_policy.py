@@ -89,6 +89,9 @@ class GNNEncoder(nn.Module):
         if obs.dim() > 2:
             obs = obs.flatten(start_dim=1)
         h = self.embed(obs)
+        if self.comm_head is not None:
+            # Cleared so a graph-less forward never reports a stale gate cost.
+            self.comm_head.last_gate_mean = None
         if graph is None:
             return h
 

@@ -118,3 +118,44 @@ def test_known_victim_relative_persists_after_inbox_clears():
     rel = env._nearest_known_victim_rel(0)
 
     assert np.allclose(rel, np.array([20.0, 10.0]) / env.world.size)
+
+
+def test_collision_penalized_once_per_contact_onset():
+    env = SARSwarmEnv(EnvConfig(num_drones=2, max_steps=10, wind_max_mps=0.0), seed=0)
+    env.reset(seed=0)
+    env.drones[0].state.pos = np.array([10.0, 10.0])
+    env.drones[1].state.pos = np.array([10.5, 10.0])   # overlapping pair
+    for _ in range(3):                                  # stay in contact
+        env.step({a: 0 for a in env.agents})
+        env.drones[0].state.pos = np.array([10.0, 10.0])
+        env.drones[1].state.pos = np.array([10.5, 10.0])
+    drone_pair_events = [c for c in env.collisions if len(c["drones"]) == 2]
+    assert len(drone_pair_events) == 1                  # onset only, no re-fire
+
+
+def test_returning_drone_mask_forces_return_to_base():
+    env = SARSwarmEnv(EnvConfig(num_drones=2, max_steps=5), seed=0)
+    env.reset(seed=0)
+    env.drones[0].mission.returning = True
+    mask = env.action_mask(0)
+    assert mask[ACTION_TO_IDX["return_to_base"]] == 1.0
+    assert mask.sum() == 1.0                            # nothing else samplable
+
+
+def test_global_state_is_compact_and_in_infos():
+    cfg = EnvConfig(num_drones=3, max_steps=5)
+    env = SARSwarmEnv(cfg, seed=0)
+    obs, infos = env.reset(seed=0)
+    gs = infos["global_state"]
+    expected = 4 * cfg.world.n_victims + 5 * cfg.num_drones + 4
+    assert gs.shape == (expected,)
+    assert np.isfinite(gs).all()
+    _, _, _, _, step_infos = env.step({a: 0 for a in env.agents})
+    assert step_infos["global_state"].shape == (expected,)
+    # padded slots stay fixed-size when fewer victims exist
+    cfg2 = cfg.model_copy(deep=True)
+    cfg2.world.n_victims = 2
+    cfg2.global_state_max_victims = cfg.world.n_victims
+    env2 = SARSwarmEnv(cfg2, seed=0)
+    _, infos2 = env2.reset(seed=0)
+    assert infos2["global_state"].shape == (expected,)

@@ -1,4 +1,5 @@
 env:
+  comm: { auto_broadcast: false }
   num_drones: 3
   max_steps: 150
   world: { size: 40, n_victims: 4, n_buildings: 6, n_no_fly_zones: 1, n_dynamic_obstacles: 2 }
@@ -8,7 +9,7 @@ train:
   algo: mappo
   lr: 0.0002
   entropy_coef: 0.01
-  reward_scale: 0.1
+  reward_scale: 1.0
   rollout_len: 1024
   num_envs: 4
   value_coef: 0.5

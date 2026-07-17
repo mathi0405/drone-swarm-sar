@@ -36,10 +36,13 @@ if _HAS_RLLIB:
             self.action_space = gym.spaces.Discrete(self.env.n_actions)
 
         def reset(self, *, seed=None, options=None):
-            return self.env.reset(seed=seed)
+            obs, info = self.env.reset(seed=seed)
+            info.pop("global_state", None)     # RLlib expects agent-keyed infos
+            return obs, info
 
         def step(self, actions):
             obs, rew, term, trunc, info = self.env.step(actions)
+            info.pop("global_state", None)     # RLlib expects agent-keyed infos
             term["__all__"] = all(term.values()) if term else True
             trunc["__all__"] = all(trunc.values()) if trunc else False
             return obs, rew, term, trunc, info

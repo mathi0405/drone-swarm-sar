@@ -38,12 +38,17 @@ class RewardInputs:
     rescue_urgency: float = 1.0
     all_victims_rescued: bool = False
     new_information_broadcast: bool = False
+    # Collision fires on contact ONSET only (the env tracks contact pairs);
+    # lingering proximity is handled by near_collision shaping.
     collision: bool = False
     near_collision: bool = False
     safely_separated: bool = False
     hovering: bool = False
     idle: bool = False
-    hazard: bool = False
+    # Hazard: full penalty on ENTERING fire/smoke, small dwell penalty per
+    # step spent inside — bounded gradient instead of a -5/step bleed.
+    hazard_entered: bool = False
+    hazard_dwell: bool = False
     battery_depleted: bool = False
     excessive_comm: bool = False
     progress_dist: float = 0.0
@@ -71,8 +76,10 @@ class RewardEngine:
             reward += r.mission_complete
         if inputs.collision:
             reward += r.collision
-        if inputs.hazard:
+        if inputs.hazard_entered:
             reward += r.hazard_penalty
+        if inputs.hazard_dwell:
+            reward += r.hazard_dwell
         if inputs.battery_depleted:
             reward += r.battery_depleted
 

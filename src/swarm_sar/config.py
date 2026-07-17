@@ -101,13 +101,20 @@ class RewardConfig(BaseModel):
     explore_new_cell: float = 1.0
     frontier_cell: float = 0.05
     coverage_new_cell: float = 0.5
-    victim_detected: float = 2.0
-    victim_classified: float = 1.0
-    victim_rescued: float = 10.0
-    mission_complete: float = 20.0
-    duplicate_explore: float = -0.1
+    victim_detected: float = 5.0
+    victim_classified: float = 2.0
+    # Rescue economics: even the worst-case rescue (urgency floor x minimum
+    # severity) must out-earn ~100 steps of maximum travel drag — enforced by
+    # tests/test_reward_engine.py.
+    victim_rescued: float = 50.0
+    mission_complete: float = 100.0
+    duplicate_explore: float = -0.05
     hover_penalty: float = -0.01
+    # Safety penalties are EVENTS, not recurring bleeds: collision fires once
+    # per contact onset (proximity shaping handles lingering); hazard fires
+    # once on entering fire/smoke, then a small dwell penalty per step inside.
     hazard_penalty: float = -5.0
+    hazard_dwell: float = -0.5
     idle: float = -0.05
     collision: float = -10.0
     useful_broadcast: float = 1.0
@@ -121,7 +128,7 @@ class RewardConfig(BaseModel):
     # Triage: scale the rescue reward by victim severity and decay it over the
     # episode, so fast, severity-ordered rescues out-earn eventual ones.
     time_critical_rescue: bool = True
-    rescue_urgency_floor: float = 0.3
+    rescue_urgency_floor: float = 0.4
     mode: str = "shaped"
 
 class EnvConfig(BaseModel):
@@ -143,6 +150,10 @@ class EnvConfig(BaseModel):
     safety_margin_m: float = 3.0
     min_spawn_separation_m: float = 4.0
     log_reward_breakdown: bool = False
+    # Number of victim slots in the compact privileged critic state (0 = use
+    # world.n_victims).  The curriculum sets this to the BENCHMARK's victim
+    # count so the critic input keeps a fixed dimension across stages.
+    global_state_max_victims: int = 0
     # Kept on the environment so allocation also works during MARL rollouts,
     # not only in the heuristic demonstration controller.  ``task_alloc`` in
     # the top-level config is the canonical user-facing setting; load_config
@@ -189,23 +200,41 @@ class TrainConfig(BaseModel):
     minibatches: int = 8
     epochs: int = 4
     grad_clip: float = 0.5
-    reward_scale: float = 0.01
+    # With running value normalization the critic handles raw return scales;
+    # keep 1.0 unless you have a specific reason to rescale.
+    reward_scale: float = 1.0
     seed: int = 0
     device: str = "auto"
     centralized_critic: bool = True
+    # Linear learning-rate annealing floor (fraction of the initial lr).
+    lr_anneal_floor: float = 0.05
+    # The imitation coefficient decays linearly to zero over this fraction of
+    # training (kickstarter-style), so PPO is not permanently tethered to the
+    # heuristic it should eventually surpass.
+    imitation_anneal_frac: float = 0.3
+    # Weight of the learned-comm gate cost added to the loss (0 disables).
+    # Positive values pressure the message gate toward silence, making
+    # "learning when to speak" an actual gradient (see LearnedCommHead).
+    comm_gate_coef: float = 0.0
     checkpoint_every: int = 100_000
     eval_every: int = 50_000
     bc_warmstart_episodes: int = 0
     bc_epochs: int = 2
     imitation_coef: float = 0.0
     curriculum: bool = True
-    # "performance": advance a stage once the policy clears the rescue-rate
-    # threshold for its CURRENT stage (linear schedule remains as a fallback
-    # floor so training always reaches full difficulty within budget).
-    # "linear": fixed 20%-of-training per stage.
+    # "performance": advance a stage once the ROLLING TRAINING-WINDOW rescue
+    # rate at the current stage clears its threshold (a 2-episode eval was a
+    # coin flip; the window uses >= curriculum_gate_min_episodes episodes).
+    # The linear schedule remains a fallback floor so training always reaches
+    # full difficulty within budget.  "linear": fixed 20%-per-stage.
     curriculum_mode: str = "performance"
     curriculum_rescue_thresholds: list[float] = Field(
-        default_factory=lambda: [0.9, 0.8, 0.7, 0.6])
+        default_factory=lambda: [0.8, 0.7, 0.6, 0.5])
+    curriculum_gate_min_episodes: int = 10
+    # Fraction of parallel envs pinned to the full benchmark during curriculum
+    # stages, so the policy never fully forgets the target distribution and
+    # stage switches are less of a distribution shock.
+    curriculum_benchmark_frac: float = 0.25
     collapse_action_threshold: float = 0.8
 
 class TaskAllocConfig(BaseModel):

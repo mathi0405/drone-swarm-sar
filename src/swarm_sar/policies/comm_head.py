@@ -30,6 +30,16 @@ if not _HAS_TORCH:
 else:
 
     class LearnedCommHead(nn.Module):
+        """Gated attention over peer messages under physical channel masks.
+
+        Bandwidth semantics: the top-k selection is a PER-RECEIVER attention
+        budget — each receiver attends to at most ``bandwidth`` of the
+        highest-gated in-range senders.  (It is not a sender-side transmit
+        budget.)  The mean gate activation of the last forward pass is kept in
+        ``last_gate_mean`` so the trainer can add a differentiable comm cost
+        (``comm_gate_coef``) that pressures the gate toward silence.
+        """
+
         def __init__(self, hidden: int, msg_dim: int = 32, n_heads: int = 4,
                      bandwidth: int = 4):
             super().__init__()
@@ -40,6 +50,7 @@ else:
             self.q = nn.Linear(hidden, msg_dim)
             self.attn = nn.MultiheadAttention(msg_dim, n_heads, batch_first=True)
             self.out = nn.Linear(msg_dim, hidden)
+            self.last_gate_mean = None
 
         def forward(self, h: torch.Tensor, adj: torch.Tensor,
                     packet_keep: torch.Tensor = None) -> torch.Tensor:
@@ -49,6 +60,7 @@ else:
             N = h.shape[0]
             msg = self.encode(h)                              # (N, msg_dim)
             gate = torch.sigmoid(self.gate(h)).squeeze(-1)    # (N,) send-importance
+            self.last_gate_mean = gate.mean()
 
             if adj.dim() == 3:
                 B, A = adj.shape[0], adj.shape[1]

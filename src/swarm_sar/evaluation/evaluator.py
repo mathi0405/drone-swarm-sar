@@ -26,17 +26,26 @@ class Evaluator:
         mets = [episode_metrics(log, grid_size=self.cfg.world.size) for log in logs]
         return {"per_seed": mets, "aggregate": aggregate(mets), "logs": logs}
 
+    # A nominal SIS below this is noise, not a baseline: ratios against it say
+    # nothing (a 3-vs-39 fluke previously clipped to a "perfect" 1.0 score).
+    MIN_NOMINAL_SIS = 10.0
+
     def robustness(self, seeds: list[int]) -> dict[str, float]:
-        """Ratio of SIS with faults enabled vs disabled (1.0 = fully robust)."""
-        # Since config is a pydantic model now:
+        """Ratio of SIS with faults enabled vs disabled (1.0 = fully robust).
+
+        Use >= 10 seeds for a meaningful estimate; with a degenerate nominal
+        score the ratio is reported as NaN rather than a fake perfect 1.0.
+        """
         base = self.cfg.model_copy(deep=True)
         base.faults.enable = False
         no_fault = [episode_metrics(self._run(base, s), grid_size=self.cfg.world.size) for s in seeds]
         with_fault = [episode_metrics(self._run(self.cfg, s), grid_size=self.cfg.world.size) for s in seeds]
         a = aggregate(no_fault)["swarm_intelligence_score"]["mean"]
         b = aggregate(with_fault)["swarm_intelligence_score"]["mean"]
-        return {"sis_nominal": a, "sis_faulted": b,
-                "robustness_score": float(np.clip(b / (a + 1e-6), 0, 1))}
+        score = (float(np.clip(b / a, 0, 1)) if a >= self.MIN_NOMINAL_SIS
+                 else float("nan"))
+        return {"sis_nominal": a, "sis_faulted": b, "robustness_score": score,
+                "n_seeds": len(seeds)}
 
     def generalization(self, train_seeds: list[int], test_seeds: list[int]) -> dict[str, float]:
         """Performance drop on unseen maps (1.0 = perfect generalization)."""

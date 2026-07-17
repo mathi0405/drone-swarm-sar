@@ -62,11 +62,11 @@ class SARSwarmEnv:
     # spaces                                                             #
     # ------------------------------------------------------------------ #
     def _compute_obs_dim(self) -> int:
-        # Match ObservationEngine frame layout: own state (7) + victim info (9)
+        # Match ObservationEngine frame layout: own state (8) + victim info (9)
         # + hazards (4) + egocentric map patch (3 channels x P x P) + LiDAR (8)
         # + peers (6 * k) + comms (4).
         p = self.cfg.obs_map_patch
-        return 7 + 9 + 4 + (3 * p * p) + 8 + (6 * self.cfg.k_nearest_drones) + 4
+        return 8 + 9 + 4 + (3 * p * p) + 8 + (6 * self.cfg.k_nearest_drones) + 4
 
     @property
     def action_space_n(self) -> int:
@@ -142,12 +142,19 @@ class SARSwarmEnv:
         self._new_cells_since_comm: list[list[list]] = [[] for _ in range(self.n)]
         self._victims_shared: list[set] = [set() for _ in range(self.n)]
         self.allocator = TaskAllocator(self.cfg.task_allocation_strategy, self.rng)
+        # Event-based safety tracking: contact pairs currently touching (so
+        # collisions penalize the ONSET only) and who was in a hazard cell
+        # last step (so hazard entry and dwell are separate signals).
+        self._contacts: set = set()
+        self._in_hazard = np.zeros(self.n, dtype=bool)
 
         self._refresh_world_masks()
         self._sense_all()
         obs, _ = self.obs_engine.get_obs(self)
         self._record_frame({a: 0 for a in self.agents})
-        return obs, {a: {} for a in self.agents}
+        infos = {a: {} for a in self.agents}
+        infos["global_state"] = self.global_state()
+        return obs, infos
 
     def _safe_spawn_position(self, base: np.ndarray, starts: list[np.ndarray],
                              idx: int, phase: float) -> np.ndarray:
@@ -217,6 +224,15 @@ class SARSwarmEnv:
         if not d.mission.alive:
             mask[:] = 0.0
             mask[ACTION_TO_IDX["hover"]] = 1.0
+            return mask
+        if d.mission.returning:
+            # Return-to-base is a committed macro-action: the autopilot flies
+            # the drone home, so the ONLY action the policy may sample is
+            # ``return_to_base``.  Without this, PPO stored sampled actions and
+            # log-probs for moves the environment overrode — off-policy
+            # garbage in every rollout containing a returning drone.
+            mask[:] = 0.0
+            mask[ACTION_TO_IDX["return_to_base"]] = 1.0
             return mask
 
         has_peer_in_range = False
@@ -365,7 +381,10 @@ class SARSwarmEnv:
             x, y = np.asarray(self.drones[i].kinematics.pos, dtype=int)
             x = int(np.clip(x, 0, self.world.size - 1))
             y = int(np.clip(y, 0, self.world.size - 1))
-            self.reward_inputs[a].hazard = self.world.grid[y, x] in (CellType.FIRE, CellType.SMOKE)
+            in_hazard = self.world.grid[y, x] in (CellType.FIRE, CellType.SMOKE)
+            self.reward_inputs[a].hazard_entered = in_hazard and not self._in_hazard[i]
+            self.reward_inputs[a].hazard_dwell = in_hazard and self._in_hazard[i]
+            self._in_hazard[i] = in_hazard
 
         # Reallocate immediately after a new detection.  Assignment is
         # battery-aware and one-to-one, avoiding multiple drones converging on
@@ -382,10 +401,12 @@ class SARSwarmEnv:
             if explicit or auto:
                 if auto and not explicit:
                     self.drones[i].mark_broadcast(extra_energy=True)
-                # Rewarded only when the payload contains NEW information
-                # (fresh cells or newly shared victims) — re-broadcasting the
-                # same content earns nothing, so comms cannot be farmed.
-                if self._handle_broadcast(i) and shaped:
+                # Rewarded only for EXPLICIT broadcasts whose payload contains
+                # NEW information (fresh cells or newly shared victims).
+                # Automatic heartbeat broadcasts still deliver the data but
+                # earn nothing — otherwise the policy learns the broadcast
+                # action is redundant and abandons it.
+                if self._handle_broadcast(i) and shaped and explicit:
                     self.reward_inputs[a].new_information_broadcast = True
                 self._last_auto_comm[i] = self.t
                 self._last_comm_explored[i] = int(self.explored[i].sum())
@@ -429,8 +450,10 @@ class SARSwarmEnv:
                     self.total_commitment += r.rescue_dwell
             if inputs.collision:
                 self.total_collision += r.collision
-            if inputs.hazard:
+            if inputs.hazard_entered:
                 self.total_hazard += r.hazard_penalty
+            if inputs.hazard_dwell:
+                self.total_hazard += r.hazard_dwell
 
         if (terminated or truncated) and self.cfg.log_reward_breakdown:
             print("\nReward Breakdown")
@@ -455,9 +478,38 @@ class SARSwarmEnv:
         # One shared (read-only) info dict — the content is identical per agent.
         shared_info = self._agent_info(frame_actions)
         infos = {a: shared_info for a in self.agents}
+        # Compact privileged state for the centralized critic (CTDE).
+        infos["global_state"] = self.global_state()
         if terminated or truncated:
             self.agents = []
         return obs, rewards, terminations, truncations, infos
+
+    def global_state(self) -> np.ndarray:
+        """Compact PRIVILEGED state for the centralized critic (training only).
+
+        Under CTDE the critic may see ground truth the actors cannot: true
+        victim positions with detected/rescued flags, per-drone pose, battery
+        and mission state, plus global mission progress and the episode clock.
+        ~50-80 dims instead of the concatenated observation stacks (thousands
+        of dims), which the critic had to re-learn perception from.  Victim
+        slots are padded to ``global_state_max_victims`` so the dimension is
+        constant across curriculum stages.
+        """
+        S = float(self.world.size)
+        max_v = self.cfg.global_state_max_victims or self.cfg.world.n_victims
+        feats: list[float] = []
+        for v in self.world.victims[:max_v]:
+            feats += [v.pos[0] / S, v.pos[1] / S, float(v.detected), float(v.rescued)]
+        feats += [0.0] * (4 * max(0, max_v - len(self.world.victims)))
+        for d in self.drones:
+            feats += [d.kinematics.pos[0] / S, d.kinematics.pos[1] / S,
+                      d.battery.soc, float(d.mission.alive), float(d.mission.returning)]
+        n_v = max(1, len(self.world.victims))
+        feats += [float(self.global_explored.mean()),
+                  self.t / max(1, self.cfg.max_steps),
+                  sum(v.detected for v in self.world.victims) / n_v,
+                  sum(v.rescued for v in self.world.victims) / n_v]
+        return np.asarray(feats, dtype=np.float32)
 
     # ------------------------------------------------------------------ #
     # sensing / detection                                               #
@@ -725,27 +777,49 @@ class SARSwarmEnv:
                     d.mission.charging = False  # station full
 
     def _handle_collisions(self):
+        """Penalize collisions on contact ONSET only.
+
+        A pair that stays overlapped (velocities are zeroed, positions may
+        coincide for many steps) previously bled -10 per drone per step,
+        dominating the return with a penalty the policy could no longer act
+        on.  Now the event fires once per new contact; lingering proximity is
+        handled by the near-miss shaping in :meth:`_handle_separation_reward`.
+        """
         cr = self.cfg.collision_radius_m
         alive = [d for d in self.drones if d.mission.alive]
+        current: set = set()
         for a_i in range(len(alive)):
             for b_i in range(a_i + 1, len(alive)):
                 da, db = alive[a_i], alive[b_i]
                 if np.linalg.norm(da.kinematics.pos - db.kinematics.pos) < cr:
+                    key = ("d", min(da.idx, db.idx), max(da.idx, db.idx))
+                    current.add(key)
                     for d in (da, db):
-                        self.reward_inputs[f"drone_{d.idx}"].collision = True
                         d.kinematics.vel = np.zeros(2)
-                    self.collisions.append({"step": self.t, "pos": da.kinematics.pos.tolist(),
-                                            "drones": [da.idx, db.idx]})
+                    if key not in self._contacts:
+                        for d in (da, db):
+                            self.reward_inputs[f"drone_{d.idx}"].collision = True
+                        self.collisions.append({"step": self.t, "pos": da.kinematics.pos.tolist(),
+                                                "drones": [da.idx, db.idx]})
         # drone vs dynamic obstacle
         for d in alive:
             for o in self.world.dyn_obstacles:
                 if np.linalg.norm(d.kinematics.pos - o.pos) < cr:
-                    self.reward_inputs[f"drone_{d.idx}"].collision = True
-                    self.collisions.append({"step": self.t, "pos": d.kinematics.pos.tolist(),
-                                            "drones": [d.idx], "obstacle": o.idx})
+                    key = ("o", d.idx, o.idx)
+                    current.add(key)
+                    if key not in self._contacts:
+                        self.reward_inputs[f"drone_{d.idx}"].collision = True
+                        self.collisions.append({"step": self.t, "pos": d.kinematics.pos.tolist(),
+                                                "drones": [d.idx], "obstacle": o.idx})
+        self._contacts = current
 
     def _handle_separation_reward(self):
-        """Shaped near-miss penalty / safe-separation bonus between drones."""
+        """Shaped near-miss penalty / safe-separation bonus between drones.
+
+        Applies within 2.5 collision radii INCLUDING ongoing contact, so a
+        stuck pair still feels steady (bounded) pressure to separate after
+        the one-time collision event has fired.
+        """
         cr = self.cfg.collision_radius_m
         for i in range(self.n):
             di = self.drones[i]
@@ -756,8 +830,6 @@ class SARSwarmEnv:
                 if i == j or not self.drones[j].mission.alive:
                     continue
                 nearest = min(nearest, float(np.linalg.norm(di.kinematics.pos - self.drones[j].kinematics.pos)))
-            if nearest < cr:
-                continue  # already penalized by _handle_collisions
             if nearest < cr * 2.5:
                 self.reward_inputs[f"drone_{i}"].near_collision = True
             elif np.isfinite(nearest):

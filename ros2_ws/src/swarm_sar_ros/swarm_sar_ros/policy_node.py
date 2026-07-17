@@ -95,6 +95,35 @@ class PolicyNode(Node):      # pragma: no cover - requires a ROS2 runtime
         frame[:7] = [p.x, p.y, p.z, v.x, v.y, 0.0, soc]
         return np.tile(frame, history_len)
 
+    # --- Safety layer -----------------------------------------------------
+    # NEVER wire raw policy output to cmd_vel.  This layer clamps speed,
+    # enforces a geofence, and stops on critical battery.  It is a minimal
+    # placeholder: a real deployment should add minimum-separation enforcement
+    # (potential field or CBF) using peer odometry.  Note also that the
+    # simulator's action is a ~5 s macro-action; republishing it at 10 Hz is a
+    # simulation abstraction, not a validated control law.
+    MAX_SPEED = 3.0                     # m/s
+    GEOFENCE_M = 100.0                  # max distance from origin
+    BATTERY_FLOOR = 0.1                 # SoC below which we hold position
+
+    def _apply_safety(self, twist: Twist) -> Twist:
+        speed = (twist.linear.x ** 2 + twist.linear.y ** 2 + twist.linear.z ** 2) ** 0.5
+        if speed > self.MAX_SPEED:
+            f = self.MAX_SPEED / speed
+            twist.linear.x *= f; twist.linear.y *= f; twist.linear.z *= f
+        if self._latest_battery is not None and \
+                self._latest_battery.percentage < self.BATTERY_FLOOR:
+            return Twist()               # hold position on critical battery
+        if self._latest_odom is not None:
+            p = self._latest_odom.pose.pose.position
+            if (p.x ** 2 + p.y ** 2) ** 0.5 > self.GEOFENCE_M:
+                # Outside the geofence: command back toward the origin.
+                twist = Twist()
+                norm = max(1e-6, (p.x ** 2 + p.y ** 2) ** 0.5)
+                twist.linear.x = -self.MAX_SPEED * p.x / norm
+                twist.linear.y = -self.MAX_SPEED * p.y / norm
+        return twist
+
     def _control_step(self):
         obs = self._build_observation()
         twist = Twist()
@@ -107,7 +136,7 @@ class PolicyNode(Node):      # pragma: no cover - requires a ROS2 runtime
             action = int(act.item())
         vx, vy, vz = _ACTION_TO_VEL.get(action, (0.0, 0.0, 0.0))
         twist.linear.x, twist.linear.y, twist.linear.z = vx, vy, vz
-        self.cmd_pub.publish(twist)
+        self.cmd_pub.publish(self._apply_safety(twist))
         if action == _BROADCAST_ACTION and self._latest_odom is not None:
             p = self._latest_odom.pose.pose.position
             out = String()
