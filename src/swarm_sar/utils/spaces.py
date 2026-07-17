@@ -1,6 +1,8 @@
 """Lightweight space descriptors (mirror gymnasium.spaces without hard dep)."""
 from __future__ import annotations
+
 from dataclasses import dataclass
+
 import numpy as np
 
 

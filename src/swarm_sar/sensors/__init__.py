@@ -1,1 +1,1 @@
-from swarm_sar.sensors.sensors import SensorSuite, GPS, IMU, Camera, Lidar  # noqa: F401
+from swarm_sar.sensors.sensors import GPS, IMU, Camera, Lidar, SensorSuite  # noqa: F401

@@ -1,13 +1,15 @@
 """High-level evaluation: multi-seed metrics, robustness & generalization scores."""
 from __future__ import annotations
+
 import time
-from typing import Callable, Dict, List
+from collections.abc import Callable
+
 import numpy as np
 
 from swarm_sar.config import EnvConfig
 from swarm_sar.environment.sar_env import SARSwarmEnv
-from swarm_sar.training.rollout import run_episode, load_neural_actor
-from swarm_sar.evaluation.metrics import episode_metrics, aggregate
+from swarm_sar.evaluation.metrics import aggregate, episode_metrics
+from swarm_sar.training.rollout import run_episode
 
 
 class Evaluator:
@@ -19,12 +21,12 @@ class Evaluator:
         env = SARSwarmEnv(cfg, seed=seed)
         return run_episode(env, self.actor_factory(env), seed=seed)
 
-    def evaluate(self, seeds: List[int]) -> Dict:
+    def evaluate(self, seeds: list[int]) -> dict:
         logs = [self._run(self.cfg, s) for s in seeds]
-        mets = [episode_metrics(l, grid_size=self.cfg.world.size) for l in logs]
+        mets = [episode_metrics(log, grid_size=self.cfg.world.size) for log in logs]
         return {"per_seed": mets, "aggregate": aggregate(mets), "logs": logs}
 
-    def robustness(self, seeds: List[int]) -> Dict[str, float]:
+    def robustness(self, seeds: list[int]) -> dict[str, float]:
         """Ratio of SIS with faults enabled vs disabled (1.0 = fully robust)."""
         # Since config is a pydantic model now:
         base = self.cfg.model_copy(deep=True)
@@ -36,7 +38,7 @@ class Evaluator:
         return {"sis_nominal": a, "sis_faulted": b,
                 "robustness_score": float(np.clip(b / (a + 1e-6), 0, 1))}
 
-    def generalization(self, train_seeds: List[int], test_seeds: List[int]) -> Dict[str, float]:
+    def generalization(self, train_seeds: list[int], test_seeds: list[int]) -> dict[str, float]:
         """Performance drop on unseen maps (1.0 = perfect generalization)."""
         # evaluate on train distribution (seen during MAPPO)
         seen = [episode_metrics(self._run(self.cfg, s), grid_size=self.cfg.world.size) for s in train_seeds]
@@ -46,7 +48,7 @@ class Evaluator:
         return {"sis_seen": a, "sis_unseen": b,
                 "generalization_score": float(np.clip(b / (a + 1e-6), 0, 1))}
 
-    def inference_time(self, seed: int = 42, steps: int = 100) -> Dict[str, float]:
+    def inference_time(self, seed: int = 42, steps: int = 100) -> dict[str, float]:
         env = SARSwarmEnv(self.cfg, seed=seed)
         actor = self.actor_factory(env)
         obs, _ = env.reset(seed=seed)

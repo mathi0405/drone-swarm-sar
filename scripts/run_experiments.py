@@ -1,22 +1,27 @@
 #!/usr/bin/env python3
 """Run an ablation grid (from configs/experiments/*.yaml) across multiple seeds."""
 from __future__ import annotations
-import argparse, json
+
+import argparse
+import json
 from pathlib import Path
+
 import _bootstrap  # noqa: F401
-import yaml, numpy as np
+import yaml
 
 from swarm_sar.config import EnvConfig, WorldConfig
 from swarm_sar.environment.sar_env import SARSwarmEnv
-from swarm_sar.training.rollout import run_episode, HeuristicActor
-from swarm_sar.evaluation.metrics import episode_metrics, aggregate
+from swarm_sar.evaluation.metrics import aggregate, episode_metrics
+from swarm_sar.training.rollout import HeuristicActor, run_episode
 
 
 def _apply(env_cfg: EnvConfig, overrides: dict):
-    import dataclasses
+    # EnvConfig is a pydantic model, not a dataclass — mutate a deep copy.
+    # (dataclasses.replace raised TypeError here and broke the ablation grid.)
+    env_cfg = env_cfg.model_copy(deep=True)
     e = overrides.get("env", {})
-    if "comm" in e:
-        env_cfg = dataclasses.replace(env_cfg, comm=dataclasses.replace(env_cfg.comm, **e["comm"]))
+    for k, v in e.get("comm", {}).items():
+        setattr(env_cfg.comm, k, v)
     for k, v in e.items():
         if k != "comm" and hasattr(env_cfg, k):
             setattr(env_cfg, k, v)

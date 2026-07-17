@@ -1,12 +1,12 @@
 """Build the dynamic communication graph adjacency used by GNN policies."""
 from __future__ import annotations
-from typing import Optional
+
 import numpy as np
 
 
 def comm_adjacency(positions: np.ndarray, comm_range: float,
                    packet_loss: float = 0.0,
-                   rng: Optional[np.random.Generator] = None) -> dict:
+                   rng: np.random.Generator | None = None) -> dict:
     """Dense (N,N) adjacency with edge attributes and a physical-channel mask.
 
     ``keep`` is a Bernoulli(1 - packet_loss) mask sampled per directed edge so
@@ -65,7 +65,7 @@ def policy_uses_pyg_graph(policy) -> bool:
 def torch_graph_from_adjacency(graph_dict: dict, device, use_pyg: bool):
     """Convert a graph dict into the graph format a policy expects."""
     import torch
-    
+
     if graph_dict is None:
         return None
 
@@ -89,7 +89,7 @@ def torch_graph_from_adjacency(graph_dict: dict, device, use_pyg: bool):
     }
 
 
-def block_diag_adjacency(graphs: list[dict], n_agents: int) -> Optional[dict]:
+def block_diag_adjacency(graphs: list[dict], n_agents: int) -> dict | None:
     """Build batched adjacency/attribute/keep tensors (B, A, A) [+ (B, A, A, F)]."""
     if not graphs:
         return None

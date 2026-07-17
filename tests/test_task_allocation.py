@@ -1,6 +1,12 @@
 import numpy as np
+
 from swarm_sar.mission.task_allocation import (
-    TaskAllocator, hungarian, auction, cost_matrix, _hungarian_numpy, ALLOCATORS,
+    ALLOCATORS,
+    TaskAllocator,
+    _hungarian_numpy,
+    auction,
+    cost_matrix,
+    hungarian,
 )
 
 

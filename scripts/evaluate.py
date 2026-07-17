@@ -1,15 +1,18 @@
 ﻿#!/usr/bin/env python3
 """Evaluate trained neural policies across multiple seeds; report metrics + SIS."""
 from __future__ import annotations
-import argparse, json, sys
+
+import argparse
+import json
 from pathlib import Path
+
 import _bootstrap  # noqa: F401
 import numpy as np
 
 from swarm_sar.config import load_config
 from swarm_sar.evaluation.evaluator import Evaluator
-from swarm_sar.training.rollout import load_neural_actor
 from swarm_sar.evaluation.stats import bootstrap_ci, iqm
+from swarm_sar.training.rollout import load_neural_actor
 
 
 def main():
@@ -22,12 +25,13 @@ def main():
 
     cfg = load_config(args.config)
     report = {}
-    
+
     for ckpt in args.ckpt:
         print(f"\n=== Evaluating {ckpt} ===")
-        actor_factory = lambda env: load_neural_actor(ckpt, deterministic=True)
+        def actor_factory(env, _ckpt=ckpt):
+            return load_neural_actor(_ckpt, deterministic=True)
         ev = Evaluator(cfg.env, actor_factory=actor_factory)
-        
+
         res = ev.evaluate(args.seeds)
         rob = ev.robustness(args.seeds[:3])
         gen = ev.generalization(args.seeds[: max(1, len(args.seeds) // 2)], args.seeds[len(args.seeds) // 2:])
@@ -39,7 +43,7 @@ def main():
         print("robustness:", {k: round(v, 3) for k, v in rob.items()})
         print("generalization:", {k: round(v, 3) for k, v in gen.items()})
         print("inference:", {k: round(v, 3) for k, v in inf.items()})
-        
+
         sis = np.array([m["swarm_intelligence_score"] for m in res["per_seed"]])
         report[ckpt] = {
             "aggregate": res["aggregate"],

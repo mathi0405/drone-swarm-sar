@@ -14,7 +14,7 @@ and otherwise falls back to a self-contained O(n^3) implementation, so the modul
 has no hard SciPy dependency.
 """
 from __future__ import annotations
-from typing import Dict, List, Optional
+
 import numpy as np
 
 
@@ -22,8 +22,8 @@ import numpy as np
 # cost matrix                                                                  #
 # --------------------------------------------------------------------------- #
 def cost_matrix(drone_pos: np.ndarray, victim_pos: np.ndarray,
-                battery: Optional[np.ndarray] = None,
-                charger_pos: Optional[np.ndarray] = None,
+                battery: np.ndarray | None = None,
+                charger_pos: np.ndarray | None = None,
                 min_battery_for_task: float = 0.18) -> np.ndarray:
     """(n_drones x n_victims) travel-cost matrix, optionally battery-weighted."""
     d = np.linalg.norm(drone_pos[:, None, :] - victim_pos[None, :, :], axis=-1)
@@ -53,7 +53,7 @@ def cost_matrix(drone_pos: np.ndarray, victim_pos: np.ndarray,
 # --------------------------------------------------------------------------- #
 # Hungarian (pure-numpy fallback)                                              #
 # --------------------------------------------------------------------------- #
-def _hungarian_numpy(cost: np.ndarray) -> List[int]:
+def _hungarian_numpy(cost: np.ndarray) -> list[int]:
     """Correct O(n^3) Hungarian (Kuhn-Munkres) with potentials, no SciPy needed.
 
     Rectangular inputs are padded to a square matrix; rows assigned to a dummy
@@ -114,7 +114,7 @@ def _hungarian_numpy(cost: np.ndarray) -> List[int]:
     return assign
 
 
-def hungarian(cost: np.ndarray) -> List[int]:
+def hungarian(cost: np.ndarray) -> list[int]:
     try:
         from scipy.optimize import linear_sum_assignment
         r, c = linear_sum_assignment(cost)
@@ -129,7 +129,7 @@ def hungarian(cost: np.ndarray) -> List[int]:
 # --------------------------------------------------------------------------- #
 # auction (Bertsekas)                                                          #
 # --------------------------------------------------------------------------- #
-def auction(cost: np.ndarray, eps: float = 0.05, max_iter: int = 1000) -> List[int]:
+def auction(cost: np.ndarray, eps: float = 0.05, max_iter: int = 1000) -> list[int]:
     n, m = cost.shape
     # Pad with dummy columns when bidders outnumber tasks: without them the
     # eviction war between surplus drones never converges and every call
@@ -190,12 +190,12 @@ def _nearest(cost):
 # --------------------------------------------------------------------------- #
 # Consensus-Based Auction Algorithm (CBAA)                                     #
 # --------------------------------------------------------------------------- #
-def cbaa(cost: np.ndarray, max_iter: int = 100) -> List[int]:
+def cbaa(cost: np.ndarray, max_iter: int = 100) -> list[int]:
     n, m = cost.shape
     value = -cost
     y = np.full((n, m), -np.inf)
     z = -np.ones((n, m), dtype=int)
-    
+
     for _ in range(max_iter):
         # 1. Phase 1: Auction
         for i in range(n):
@@ -209,11 +209,11 @@ def cbaa(cost: np.ndarray, max_iter: int = 100) -> List[int]:
                     best_j = np.argmax(h)
                     y[i, best_j] = value[i, best_j]
                     z[i, best_j] = i
-                    
+
         # 2. Phase 2: Consensus (simulate all-to-all broadcast)
         y_next = y.copy()
         z_next = z.copy()
-        
+
         for j in range(m):
             # Find the globally maximum bid for task j
             max_bid = np.max(y[:, j])
@@ -226,13 +226,13 @@ def cbaa(cost: np.ndarray, max_iter: int = 100) -> List[int]:
                 if winner != -1:
                     y_next[:, j] = max_bid
                     z_next[:, j] = winner
-                
+
         if np.array_equal(y, y_next) and np.array_equal(z, z_next):
             break
-            
+
         y = y_next
         z = z_next
-        
+
     assign = [-1] * n
     for j in range(m):
         if z[0, j] != -1:
@@ -244,16 +244,16 @@ ALLOCATORS = ("random", "nearest", "hungarian", "auction", "cbaa", "rl")
 
 
 class TaskAllocator:
-    def __init__(self, strategy: str = "auction", rng: Optional[np.random.Generator] = None):
+    def __init__(self, strategy: str = "auction", rng: np.random.Generator | None = None):
         assert strategy in ALLOCATORS, f"unknown strategy {strategy}"
         self.strategy = strategy
         self.rng = rng or np.random.default_rng(0)
 
     def assign(self, drone_pos: np.ndarray, victim_pos: np.ndarray,
-               battery: Optional[np.ndarray] = None,
-               rl_scores: Optional[np.ndarray] = None,
-               charger_pos: Optional[np.ndarray] = None,
-               min_battery_for_task: float = 0.18) -> Dict[int, int]:
+               battery: np.ndarray | None = None,
+               rl_scores: np.ndarray | None = None,
+               charger_pos: np.ndarray | None = None,
+               min_battery_for_task: float = 0.18) -> dict[int, int]:
         """Return {drone_idx: victim_idx} (victim_idx == -1 means unassigned)."""
         if len(victim_pos) == 0 or len(drone_pos) == 0:
             return {i: -1 for i in range(len(drone_pos))}

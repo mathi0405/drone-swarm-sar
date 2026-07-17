@@ -8,12 +8,15 @@ thousands of episodes on a CPU while retaining the structure needed to study
 cooperative exploration under occlusion, fire/smoke and no-fly constraints.
 """
 from __future__ import annotations
-from typing import Dict, List, Optional, Tuple
+
 import numpy as np
 
 from swarm_sar.config import WorldConfig
 from swarm_sar.environment.entities import (
-    CellType, Victim, ChargingStation, DynamicObstacle,
+    CellType,
+    ChargingStation,
+    DynamicObstacle,
+    Victim,
 )
 from swarm_sar.utils.geometry import bresenham
 
@@ -32,19 +35,18 @@ class SARWorld:
         self.rng = rng
         self.size = cfg.size
         self.grid = np.zeros((self.size, self.size), dtype=np.int8)
-        self.victims: List[Victim] = []
-        self.charging: List[ChargingStation] = []
-        self.dyn_obstacles: List[DynamicObstacle] = []
+        self.victims: list[Victim] = []
+        self.charging: list[ChargingStation] = []
+        self.dyn_obstacles: list[DynamicObstacle] = []
         self.reset(rng)
 
     # --------------------------------------------------------------------- #
     # generation                                                            #
     # --------------------------------------------------------------------- #
-    def reset(self, rng: Optional[np.random.Generator] = None) -> None:
+    def reset(self, rng: np.random.Generator | None = None) -> None:
         if rng is not None:
             self.rng = rng
         r = self.rng
-        s = self.size
         self.grid[:] = CellType.FREE
 
         self._carve_roads(r)
@@ -117,7 +119,7 @@ class SARWorld:
             w, h = int(r.integers(3, 7)), int(r.integers(3, 7))
             self.grid[max(0, cy - h // 2):cy + h // 2, max(0, cx - w // 2):cx + w // 2] = CellType.NO_FLY
 
-    def _free_cell(self, r: np.random.Generator, allow=(CellType.FREE, CellType.ROAD)) -> Tuple[int, int]:
+    def _free_cell(self, r: np.random.Generator, allow=(CellType.FREE, CellType.ROAD)) -> tuple[int, int]:
         for _ in range(500):
             x = int(r.integers(1, self.size - 1)); y = int(r.integers(1, self.size - 1))
             if self.grid[y, x] in allow:
@@ -160,7 +162,7 @@ class SARWorld:
         d = [np.linalg.norm(np.asarray(pos) - c.pos) for c in self.charging]
         return self.charging[int(np.argmin(d))]
 
-    def step_dynamic(self) -> Dict[str, int]:
+    def step_dynamic(self) -> dict[str, int]:
         events = {
             "obstacle_moves": 0,
             "victim_moves": 0,
@@ -202,12 +204,12 @@ class SARWorld:
                     break
         return moved
 
-    def _spread_fire_and_smoke(self) -> Tuple[int, int, int]:
+    def _spread_fire_and_smoke(self) -> tuple[int, int, int]:
         fire_cells = np.argwhere(self.grid == CellType.FIRE)
         smoke_cells = np.argwhere(self.grid == CellType.SMOKE)
-        new_fire: List[Tuple[int, int]] = []
-        new_smoke: List[Tuple[int, int]] = []
-        decayed: List[Tuple[int, int]] = []
+        new_fire: list[tuple[int, int]] = []
+        new_smoke: list[tuple[int, int]] = []
+        decayed: list[tuple[int, int]] = []
         for y, x in fire_cells:
             for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
                 xx, yy = int(x + dx), int(y + dy)

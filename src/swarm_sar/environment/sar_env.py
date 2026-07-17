@@ -13,23 +13,25 @@ shaped objective from the research design (exploration, detection, rescue,
 communication, safety, energy).
 """
 from __future__ import annotations
-from typing import Dict, List, Tuple
+
 import numpy as np
 
-from swarm_sar.config import EnvConfig, load_config
-from swarm_sar.environment.entities import CellType
-from swarm_sar.environment.world import (
-    BLOCKS_FLIGHT_VALUES, OCCLUDES_VALUES, SARWorld,
-)
-from swarm_sar.utils.geometry import disk_visibility_offsets
-from swarm_sar.environment.reward_engine import RewardEngine, RewardInputs
-from swarm_sar.drone.drone import Drone, ACTIONS, ACTION_TO_IDX
 from swarm_sar.communication.comms import CommNetwork, Message
-from swarm_sar.faults.fault_injector import FaultInjector
-from swarm_sar.utils.seeding import make_rng
+from swarm_sar.config import EnvConfig, load_config
+from swarm_sar.drone.drone import ACTION_TO_IDX, ACTIONS, Drone
+from swarm_sar.environment.entities import CellType
 from swarm_sar.environment.observation import HISTORY_LEN, ObservationEngine
+from swarm_sar.environment.reward_engine import RewardEngine, RewardInputs
+from swarm_sar.environment.world import (
+    BLOCKS_FLIGHT_VALUES,
+    OCCLUDES_VALUES,
+    SARWorld,
+)
+from swarm_sar.faults.fault_injector import FaultInjector
 from swarm_sar.mission.planner import _move_action_towards
 from swarm_sar.mission.task_allocation import TaskAllocator
+from swarm_sar.utils.geometry import disk_visibility_offsets
+from swarm_sar.utils.seeding import make_rng
 
 
 class SARSwarmEnv:
@@ -73,7 +75,7 @@ class SARSwarmEnv:
     # ------------------------------------------------------------------ #
     # lifecycle                                                          #
     # ------------------------------------------------------------------ #
-    def reset(self, seed: int | None = None) -> Tuple[Dict[str, np.ndarray], Dict[str, dict]]:
+    def reset(self, seed: int | None = None) -> tuple[dict[str, np.ndarray], dict[str, dict]]:
         self.total_explore = 0.0
         self.total_progress = 0.0
         self.total_commitment = 0.0
@@ -103,8 +105,8 @@ class SARSwarmEnv:
 
         # spawn drones near a (random) charging station
         base = self.world.charging[0].pos
-        self.drones: List[Drone] = []
-        starts: List[np.ndarray] = []
+        self.drones: list[Drone] = []
+        starts: list[np.ndarray] = []
         phase = self.rng.uniform(0, 2 * np.pi)
         for i in range(self.n):
             start = self._safe_spawn_position(base, starts, i, phase)
@@ -124,12 +126,12 @@ class SARSwarmEnv:
         self.wind = self.rng.uniform(-1, 1, size=2) * self.cfg.wind_max_mps
         self.visibility = 1.0
         self.gps_noise_scale = 1.0
-        self.environment_events: List[dict] = []
+        self.environment_events: list[dict] = []
 
         self.t = 0
         self.agents = list(self.possible_agents)
-        self.history: List[dict] = []
-        self.collisions: List[dict] = []
+        self.history: list[dict] = []
+        self.collisions: list[dict] = []
         self.comm_events = 0
         self._prev_found = 0
         self._last_auto_comm = np.full(self.n, -10_000, dtype=int)
@@ -137,8 +139,8 @@ class SARSwarmEnv:
         self._hover_counts = np.zeros(self.n, dtype=int)
         # Per-drone chronological list of newly explored (y, x) cells since the
         # drone's last broadcast, and the victim ids it has already shared.
-        self._new_cells_since_comm: List[List[list]] = [[] for _ in range(self.n)]
-        self._victims_shared: List[set] = [set() for _ in range(self.n)]
+        self._new_cells_since_comm: list[list[list]] = [[] for _ in range(self.n)]
+        self._victims_shared: list[set] = [set() for _ in range(self.n)]
         self.allocator = TaskAllocator(self.cfg.task_allocation_strategy, self.rng)
 
         self._refresh_world_masks()
@@ -147,7 +149,7 @@ class SARSwarmEnv:
         self._record_frame({a: 0 for a in self.agents})
         return obs, {a: {} for a in self.agents}
 
-    def _safe_spawn_position(self, base: np.ndarray, starts: List[np.ndarray],
+    def _safe_spawn_position(self, base: np.ndarray, starts: list[np.ndarray],
                              idx: int, phase: float) -> np.ndarray:
         sep = max(self.cfg.min_spawn_separation_m, self.cfg.collision_radius_m * 2.0)
         S = self.world.size
@@ -179,7 +181,7 @@ class SARSwarmEnv:
             return ACTION_TO_IDX.get(action, ACTION_TO_IDX["hover"])
         return int(action)
 
-    def _split_action(self, action) -> Tuple[int, object]:
+    def _split_action(self, action) -> tuple[int, object]:
         """Support old integer actions and new movement+communication actions."""
         comm = None
         move = action
@@ -216,18 +218,18 @@ class SARSwarmEnv:
             mask[:] = 0.0
             mask[ACTION_TO_IDX["hover"]] = 1.0
             return mask
-        
+
         has_peer_in_range = False
         for j, other in enumerate(self.drones):
             if i != j and other.mission.alive and other.faults.comm_ok:
                 if np.linalg.norm(d.kinematics.pos - other.kinematics.pos) <= self.cfg.comm.range_m:
                     has_peer_in_range = True
                     break
-        
+
         if not has_peer_in_range and "broadcast" in allowed:
             mask[ACTION_TO_IDX["broadcast"]] = 0.0
-            
-        for name, delta in self._MOVE_DELTAS.items():
+
+        for name in self._MOVE_DELTAS:
             idx = ACTION_TO_IDX[name]
             if mask[idx] <= 0:
                 continue
@@ -242,7 +244,7 @@ class SARSwarmEnv:
                 if dist < max(self.cfg.collision_radius_m, self.cfg.safety_margin_m):
                     mask[idx] = 0.0
                     break
-        
+
         # If momentum or wind makes all actions illegal, fallback to hover to prevent NaN probabilities
         if mask.sum() == 0:
             mask[ACTION_TO_IDX["hover"]] = 1.0
@@ -280,7 +282,7 @@ class SARSwarmEnv:
         closest = start + t * seg
         return float(np.linalg.norm(point - closest))
 
-    def step(self, actions: Dict[str, int]):
+    def step(self, actions: dict[str, int]):
         self.t += 1
         self.comm.edges_this_step = []          # collect this step's comm links
         rewards = {a: 0.0 for a in self.agents}
@@ -289,7 +291,7 @@ class SARSwarmEnv:
         r = self.cfg.reward
         shaped = r.mode != "sparse"   # sparse = event rewards only (reward-ablation)
         prev_pos = [d.kinematics.pos.copy() for d in self.drones]
-        parsed_actions: Dict[int, Tuple[int, object]] = {}
+        parsed_actions: dict[int, tuple[int, object]] = {}
 
         # gust of wind varies over time (sim-to-real)
         self.wind += self.rng.normal(0, 0.2, size=2)
@@ -412,7 +414,7 @@ class SARSwarmEnv:
         for a in self.agents:
             inputs = self.reward_inputs[a]
             rewards[a] = self.reward_engine.compute(inputs)
-            
+
             # Track components for debugging (mirrors RewardEngine normalization)
             if shaped:
                 foot = max(1, inputs.sensor_footprint)
@@ -450,7 +452,9 @@ class SARSwarmEnv:
         frame_actions = {a: parsed_actions.get(i, (0, None))[0]
                          for i, a in enumerate(self.possible_agents)}
         self._record_frame(frame_actions)
-        infos = {a: self._agent_info(frame_actions) for a in self.agents}
+        # One shared (read-only) info dict — the content is identical per agent.
+        shared_info = self._agent_info(frame_actions)
+        infos = {a: shared_info for a in self.agents}
         if terminated or truncated:
             self.agents = []
         return obs, rewards, terminations, truncations, infos
@@ -487,7 +491,7 @@ class SARSwarmEnv:
         self._occ_mask = np.isin(self.world.grid, OCCLUDES_VALUES)
         self._blocked_mask = np.isin(self.world.grid, BLOCKS_FLIGHT_VALUES)
 
-    def _sense_one(self, i: int) -> Tuple[int, int, int, int]:
+    def _sense_one(self, i: int) -> tuple[int, int, int, int]:
         """Vectorized sensing sweep with exact Bresenham line-of-sight.
 
         Semantics are identical to the per-cell ``world.line_of_sight`` loop,
@@ -541,7 +545,7 @@ class SARSwarmEnv:
                     frontiers += 1
         return new_cells, new_team_cells, dup, frontiers
 
-    def _detect_and_rescue(self, i: int) -> Tuple[int, int, int]:
+    def _detect_and_rescue(self, i: int) -> tuple[int, int, int]:
         d = self.drones[i]
         if not d.mission.alive:
             return 0, 0, 0
@@ -678,7 +682,7 @@ class SARSwarmEnv:
     def _merge_inbox(self, i: int):
         """Fuse received victim/coverage information into local beliefs."""
         for m in self.comm.inbox(i):
-            for (vidx, pos) in m.payload.get("victims", []):
+            for (_vidx, pos) in m.payload.get("victims", []):
                 x, y = int(pos[0]), int(pos[1])
                 self.victim_belief[i][y, x] = max(self.victim_belief[i][y, x], 0.9)
             for y, x in m.payload.get("explored_cells", []):
@@ -814,7 +818,7 @@ class SARSwarmEnv:
     # ------------------------------------------------------------------ #
     # logging / rendering                                                #
     # ------------------------------------------------------------------ #
-    def _record_frame(self, actions: Dict[str, int]):
+    def _record_frame(self, actions: dict[str, int]):
         self.history.append({
             "t": self.t,
             "pos": [d.kinematics.pos.copy() for d in self.drones],
@@ -834,7 +838,7 @@ class SARSwarmEnv:
         # running metrics snapshot (TensorBoard/logging)
         self.metrics = self.episode_summary()
 
-    def _agent_info(self, actions: Dict[str, int]) -> dict:
+    def _agent_info(self, actions: dict[str, int]) -> dict:
         """Per-agent info dict returned from :meth:`step`."""
         vic = self.world.victims
         rescued_count = int(sum(v.rescued for v in vic))

@@ -5,17 +5,21 @@ Every method sees identical maps (in-distribution or OOD), so the comparison is
 fair and reproducible. Add --checkpoint to include a trained MAPPO policy.
 """
 from __future__ import annotations
-import argparse, csv, json
+
+import argparse
+import csv
+import json
 from pathlib import Path
+
 import _bootstrap  # noqa: F401
 import numpy as np
 
 from swarm_sar.environment.sar_env import SARSwarmEnv
-from swarm_sar.training.rollout import run_episode, HeuristicActor
-from swarm_sar.mission.baselines import BASELINES, ControllerActor
+from swarm_sar.evaluation.benchmark import BENCHMARK_VERSION, suite
 from swarm_sar.evaluation.metrics import episode_metrics
-from swarm_sar.evaluation.stats import iqm, bootstrap_ci
-from swarm_sar.evaluation.benchmark import suite, BENCHMARK_VERSION
+from swarm_sar.evaluation.stats import bootstrap_ci, iqm
+from swarm_sar.mission.baselines import BASELINES, ControllerActor
+from swarm_sar.training.rollout import HeuristicActor, run_episode
 from swarm_sar.visualization import plots
 
 

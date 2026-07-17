@@ -5,10 +5,10 @@ so they are backend-agnostic (self-contained sim or AirSim). Aggregation reports
 mean +/- std across seeds, as required for publication-grade results.
 """
 from __future__ import annotations
-from typing import Dict, List
-import numpy as np
-from swarm_sar.drone.drone import ACTIONS
 
+import numpy as np
+
+from swarm_sar.drone.drone import ACTIONS
 
 # weights for the Swarm Intelligence Score (sum to 1)
 SIS_WEIGHTS = {"coverage": 0.25, "rescue": 0.30, "energy": 0.15,
@@ -46,7 +46,7 @@ def exploration_entropy(frames, grid_size: int, bins: int = 16) -> float:
 
 
 def episode_metrics(log, energy_budget: float | None = None, grid_size: int = 64,
-                    sensor_swath_cells: float = 16.0) -> Dict[str, float]:
+                    sensor_swath_cells: float = 16.0) -> dict[str, float]:
     s = log.summary
     frames = log.frames
     steps = max(1, s["steps"])
@@ -116,7 +116,7 @@ def episode_metrics(log, energy_budget: float | None = None, grid_size: int = 64
     }
 
 
-def episode_diagnostics(log) -> Dict[str, object]:
+def episode_diagnostics(log) -> dict[str, object]:
     """Low-level diagnostics that expose collapse, silence and unsafe behavior."""
     hist = {name: 0 for name in ACTIONS}
     comm_edges = 0
@@ -139,8 +139,8 @@ def episode_diagnostics(log) -> Dict[str, object]:
     }
 
 
-def swarm_intelligence_score(components: Dict[str, float],
-                             weights: Dict[str, float] = None,
+def swarm_intelligence_score(components: dict[str, float],
+                             weights: dict[str, float] = None,
                              mode: str = "geometric") -> float:
     """Composite Swarm Intelligence Score (SIS) in [0, 100].
 
@@ -161,7 +161,7 @@ def swarm_intelligence_score(components: Dict[str, float],
     return round(100.0 * score, 2)
 
 
-def aggregate(metric_dicts: List[Dict[str, float]]) -> Dict[str, Dict[str, float]]:
+def aggregate(metric_dicts: list[dict[str, float]]) -> dict[str, dict[str, float]]:
     """Mean/std across seeds for every metric."""
     if not metric_dicts:
         return {}

@@ -11,7 +11,7 @@ AirSim is an optional dependency (``pip install -r requirements-sim.txt``). If i
 is not installed, constructing the adapter raises a clear, actionable error.
 """
 from __future__ import annotations
-from typing import Dict, List, Tuple
+
 import numpy as np
 
 from swarm_sar.config import EnvConfig
@@ -53,10 +53,10 @@ class AirSimSwarmEnv:
         for v in self.vehicles:
             self.client.enableApiControl(True, v)
             self.client.armDisarm(True, v)
-            
+
         from swarm_sar.environment.sar_env import SARSwarmEnv
         self.virtual_env = SARSwarmEnv(cfg)
-        
+
         # Optionally init YOLO (missing ultralytics OR missing model_path both
         # simply disable the perception add-on rather than crashing).
         try:
@@ -65,7 +65,7 @@ class AirSimSwarmEnv:
         except (ImportError, ValueError):
             self.detector = None
 
-    def reset(self) -> Tuple[Dict[str, np.ndarray], Dict[str, dict]]:
+    def reset(self) -> tuple[dict[str, np.ndarray], dict[str, dict]]:
         self.client.reset()
         self.virtual_env.reset()
         for i, v in enumerate(self.vehicles):
@@ -77,7 +77,7 @@ class AirSimSwarmEnv:
             self.client.takeoffAsync(vehicle_name=v)
         return {a: self._obs(i) for i, a in enumerate(self.agents)}, {a: {} for a in self.agents}
 
-    def step(self, actions: Dict[str, int]):
+    def step(self, actions: dict[str, int]):
         futures = []
         for i, a in enumerate(self.agents):
             name = ACTIONS[int(actions.get(a, 0))]
@@ -121,7 +121,7 @@ class AirSimSwarmEnv:
         st = self.client.getMultirotorState(vehicle_name=v)
         p = st.kinematics_estimated.position
         vel = st.kinematics_estimated.linear_velocity
-        
+
         # Match observation shape with SARSwarmEnv
         base_obs = self.virtual_env._obs(i).copy()
         base_obs[0] = p.x_val
@@ -129,7 +129,7 @@ class AirSimSwarmEnv:
         base_obs[2] = -p.z_val
         base_obs[3] = vel.x_val
         base_obs[4] = vel.y_val
-        
+
         return base_obs
 
     def close(self):

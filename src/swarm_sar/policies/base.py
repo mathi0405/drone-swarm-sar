@@ -5,10 +5,10 @@ receives the *global* state during training (CTDE); at execution time only the
 per-agent encoder + actor are used, giving fully decentralized control.
 """
 from __future__ import annotations
-from dataclasses import dataclass
-from typing import Optional
 
 import os
+from dataclasses import dataclass
+
 try:
     if os.environ.get("IS_WORKER") == "1":
         raise Exception("Skipping torch in worker to save VRAM")
@@ -99,7 +99,7 @@ class PolicySpec:
     n_agents: int
 
 
-def build_policy(model_cfg, spec: "PolicySpec", centralized: bool = True):
+def build_policy(model_cfg, spec: PolicySpec, centralized: bool = True):
     """Factory: return an ActorCritic with the requested encoder."""
     _require_torch()
     arch = model_cfg.arch

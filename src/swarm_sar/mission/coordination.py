@@ -1,7 +1,7 @@
 """Swarm coordination helpers: leaders, formations and failure reassignment."""
 from __future__ import annotations
 
-from typing import Dict, Iterable
+from collections.abc import Iterable
 
 import numpy as np
 
@@ -26,8 +26,8 @@ def elect_leader(positions: np.ndarray, alive: Iterable[bool],
     return int(candidates[int(np.argmax(scores))])
 
 
-def reassign_failed_tasks(assignments: Dict[int, int], alive: Iterable[bool],
-                          positions: np.ndarray, target_pos: np.ndarray) -> Dict[int, int]:
+def reassign_failed_tasks(assignments: dict[int, int], alive: Iterable[bool],
+                          positions: np.ndarray, target_pos: np.ndarray) -> dict[int, int]:
     """Move tasks owned by failed drones to nearest alive drones."""
     alive_arr = np.asarray(list(alive), dtype=bool)
     pos = np.asarray(positions, dtype=float)

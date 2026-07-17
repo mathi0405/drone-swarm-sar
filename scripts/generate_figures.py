@@ -8,18 +8,27 @@ as such. Run `scripts/train.py` then point this at the resulting logs to replace
 them with measured curves.
 """
 from __future__ import annotations
-import argparse, json, sys
+
+import argparse
+import json
+import sys
 from pathlib import Path
+
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from swarm_sar.config import EnvConfig, WorldConfig
 from swarm_sar.environment.sar_env import SARSwarmEnv
-from swarm_sar.training.rollout import run_episode, HeuristicActor
-from swarm_sar.evaluation.metrics import episode_metrics, aggregate, exploration_entropy, swarm_intelligence_score
-from swarm_sar.mission.task_allocation import TaskAllocator, cost_matrix
-from swarm_sar.visualization import plots, synthetic as syn
+from swarm_sar.evaluation.metrics import (
+    episode_metrics,
+    exploration_entropy,
+    swarm_intelligence_score,
+)
+from swarm_sar.mission.task_allocation import TaskAllocator
+from swarm_sar.training.rollout import HeuristicActor, run_episode
+from swarm_sar.visualization import plots
+from swarm_sar.visualization import synthetic as syn
 
 
 def hero_episode(size=64, drones=3, steps=220):
@@ -73,14 +82,14 @@ def main():
         for s in seeds:
             env = SARSwarmEnv(EnvConfig(num_drones=ndr, max_steps=200,
                               world=WorldConfig(size=args.size, n_victims=8)), seed=s)
-            l = run_episode(env, HeuristicActor(env, "auction", s), seed=s)
-            m = episode_metrics(l, grid_size=args.size)
+            ep_log = run_episode(env, HeuristicActor(env, "auction", s), seed=s)
+            m = episode_metrics(ep_log, grid_size=args.size)
             covs.append(m["coverage"] * 100); colls.append(m["collision_rate"])
         cov_series[f"Heuristic, {label} (measured)"] = covs
         coll_series[f"Heuristic, {label} (measured)"] = colls
     # entropy over time within the hero episode, and for a no-comm variant
-    def entropy_over_time(l):
-        return [exploration_entropy(l.frames[: k + 1], args.size) for k in range(0, len(l.frames), 4)]
+    def entropy_over_time(ep_log):
+        return [exploration_entropy(ep_log.frames[: k + 1], args.size) for k in range(0, len(ep_log.frames), 4)]
     ent_series["with comm"] = entropy_over_time(log)
     env = SARSwarmEnv(EnvConfig(num_drones=3, max_steps=200,
                       world=WorldConfig(size=args.size, n_victims=8)), seed=seed)
@@ -112,8 +121,8 @@ def main():
     # synth per-arch aggregates for comparison
     def synth_agg(arch):
         base = syn._PROFILE[arch][0]
-        rng = np.random.default_rng(hash(arch) % 1000)
-        mk = lambda mu, sd: {"mean": float(mu), "std": float(sd)}
+        def mk(mu, sd):
+            return {"mean": float(mu), "std": float(sd)}
         return {"coverage": mk(base, 0.03),
                 "victims_rescued": mk(base * 8 * 0.8, 0.6),
                 "swarm_intelligence_score": mk(swarm_intelligence_score(

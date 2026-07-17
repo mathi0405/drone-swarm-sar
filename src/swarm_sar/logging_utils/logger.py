@@ -5,10 +5,12 @@ logs (CSV), and a summary JSON, so experiments are fully reproducible and easy t
 post-process into the figures.
 """
 from __future__ import annotations
-import csv, json, time
+
+import csv
+import json
+import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Optional
 
 
 class RunManager:
@@ -45,7 +47,7 @@ class ExperimentLogger:
             except Exception:
                 self.tb = None
 
-    def log_scalars(self, scalars: Dict[str, float], step: int) -> None:
+    def log_scalars(self, scalars: dict[str, float], step: int) -> None:
         if self._header is None:
             self._header = ["step", "wall_s", *scalars.keys()]
             self._writer.writerow(self._header)
@@ -71,7 +73,7 @@ class ExperimentLogger:
         with open(self.dir / "config.json", "w") as f:
             json.dump(data, f, indent=2, default=str)
 
-    def save_summary(self, summary: Dict) -> None:
+    def save_summary(self, summary: dict) -> None:
         with open(self.dir / "summary.json", "w") as f:
             json.dump(summary, f, indent=2, default=str)
 

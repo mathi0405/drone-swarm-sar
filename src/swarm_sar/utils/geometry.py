@@ -1,7 +1,8 @@
 """Small, dependency-free geometry helpers used across the sim."""
 from __future__ import annotations
+
 from functools import lru_cache
-from typing import List, Tuple
+
 import numpy as np
 
 
@@ -14,9 +15,9 @@ def clip_to_bounds(xy, low, high):
     return np.clip(np.asarray(xy, dtype=float), low, high)
 
 
-def bresenham(x0: int, y0: int, x1: int, y1: int) -> List[Tuple[int, int]]:
+def bresenham(x0: int, y0: int, x1: int, y1: int) -> list[tuple[int, int]]:
     """Integer grid cells on the line (x0,y0)->(x1,y1). Used for line-of-sight."""
-    cells: List[Tuple[int, int]] = []
+    cells: list[tuple[int, int]] = []
     dx = abs(x1 - x0); dy = -abs(y1 - y0)
     sx = 1 if x0 < x1 else -1
     sy = 1 if y0 < y1 else -1
@@ -49,7 +50,7 @@ def disk_visibility_offsets(radius: int):
       * ``line_y/x``   (N, L) int32 — padded intermediate-cell offsets,
       * ``line_valid`` (N, L) bool  — mask of real (non-padding) entries.
     """
-    cells: List[Tuple[int, int]] = []
+    cells: list[tuple[int, int]] = []
     for dy in range(-radius, radius + 1):
         for dx in range(-radius, radius + 1):
             if dx * dx + dy * dy <= radius * radius:

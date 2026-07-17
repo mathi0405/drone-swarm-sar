@@ -2,12 +2,14 @@
 """Train MAPPO (CTDE). Uses the lightweight built-in trainer; for large-scale
 distributed runs pass --rllib to use Ray RLlib instead."""
 from __future__ import annotations
+
 import argparse
+
 import _bootstrap  # noqa: F401
 
 from swarm_sar.config import load_config
-from swarm_sar.utils.seeding import set_global_seed
 from swarm_sar.policies.base import HAS_TORCH
+from swarm_sar.utils.seeding import set_global_seed
 
 
 def main():
@@ -49,8 +51,8 @@ def main():
         rllib_train(cfg, iterations=cfg.train.total_timesteps // (cfg.train.rollout_len * cfg.train.num_envs))
         return
 
+    from swarm_sar.logging_utils import ExperimentLogger, RunManager
     from swarm_sar.training.mappo import MAPPOTrainer
-    from swarm_sar.logging_utils import RunManager, ExperimentLogger
     rm = RunManager(cfg.log.out_dir, cfg.log.experiment_name)
     logger = ExperimentLogger(rm.dir, use_tensorboard=cfg.log.log_tensorboard)
     logger.save_config(cfg)

@@ -1,6 +1,8 @@
 """Console-script entry points (see [project.scripts] in pyproject.toml)."""
-import runpy, sys
+import runpy
+import sys
 from pathlib import Path
+
 _SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
 
 

@@ -7,17 +7,19 @@ Figures marked ``[illustrative]`` (reward/learning curves, attention, 4-arch
 comparison) use documented placeholder data pending a full GPU training run.
 """
 from __future__ import annotations
+
 from pathlib import Path
-from typing import Dict, List, Optional
-import numpy as np
+
 import matplotlib
+import numpy as np
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib import animation
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 
-from swarm_sar.visualization.style import DRONE_COLORS, CELL_CMAP, set_pub_style
 from swarm_sar.visualization import synthetic as syn
+from swarm_sar.visualization.style import CELL_CMAP, DRONE_COLORS, set_pub_style
 
 set_pub_style()
 _CELL_LABELS = ["free", "road", "building", "tree", "rubble", "fire", "smoke", "no-fly", "charging"]
@@ -162,7 +164,7 @@ def fig_coverage_heatmap(log, grid_size, path):
     im0 = axes[0].imshow(np.log1p(density), cmap="magma", origin="lower")
     axes[0].set_title("Search Density (visitation, log)"); fig.colorbar(im0, ax=axes[0], fraction=.046)
     explored = (density > 0).astype(float)
-    im1 = axes[1].imshow(explored, cmap="Greens", origin="lower", vmin=0, vmax=1)
+    axes[1].imshow(explored, cmap="Greens", origin="lower", vmin=0, vmax=1)
     axes[1].set_title(f"Explored vs Unexplored  ({explored.mean()*100:.0f}% covered)")
     for ax in axes:
         ax.set_xlabel("x (cells)"); ax.set_ylabel("y (cells)")
@@ -263,7 +265,7 @@ def fig_reward_curves(path, steps=60):
     return _save(fig, path)
 
 
-def fig_metric_vs_episodes(real_series: Dict[str, list], path, ylabel, title, illustrative=True):
+def fig_metric_vs_episodes(real_series: dict[str, list], path, ylabel, title, illustrative=True):
     fig, ax = plt.subplots(figsize=(8, 5.2))
     for name, series in real_series.items():
         ax.plot(series, marker="o", ms=3, label=name)
@@ -271,7 +273,7 @@ def fig_metric_vs_episodes(real_series: Dict[str, list], path, ylabel, title, il
     return _save(fig, path)
 
 
-def fig_success_rate(success_by_arch: Dict[str, float], path):
+def fig_success_rate(success_by_arch: dict[str, float], path):
     fig, ax = plt.subplots(figsize=(7.5, 5))
     archs = list(success_by_arch.keys()); vals = [success_by_arch[a] * 100 for a in archs]
     ax.bar(archs, vals, color=DRONE_COLORS[: len(archs)], edgecolor="k")
@@ -393,7 +395,7 @@ def fig_gnn_message_passing(log, path):
 # ----------------------------------------------------------------------- #
 # Fig 17 - exploration entropy                                            #
 # ----------------------------------------------------------------------- #
-def fig_exploration_entropy(entropy_series: Dict[str, list], path):
+def fig_exploration_entropy(entropy_series: dict[str, list], path):
     fig, ax = plt.subplots(figsize=(8, 5))
     for name, series in entropy_series.items():
         ax.plot(series, label=name)
@@ -405,7 +407,7 @@ def fig_exploration_entropy(entropy_series: Dict[str, list], path):
 # ----------------------------------------------------------------------- #
 # Fig 18 - task allocation                                                #
 # ----------------------------------------------------------------------- #
-def fig_task_allocation(drone_pos, victim_pos, assignment: Dict[int, int], path, strategy="auction"):
+def fig_task_allocation(drone_pos, victim_pos, assignment: dict[int, int], path, strategy="auction"):
     fig, ax = plt.subplots(figsize=(7, 6))
     dp = np.asarray(drone_pos); vp = np.asarray(victim_pos)
     for i, p in enumerate(dp):
@@ -421,8 +423,7 @@ def fig_task_allocation(drone_pos, victim_pos, assignment: Dict[int, int], path,
 # ----------------------------------------------------------------------- #
 # Fig 20 - algorithm comparison                                           #
 # ----------------------------------------------------------------------- #
-def fig_algo_comparison(agg_by_arch: Dict[str, Dict], path):
-    metrics = ["coverage", "victims_rescued", "swarm_intelligence_score", "collision_rate"]
+def fig_algo_comparison(agg_by_arch: dict[str, dict], path):
     labels = ["Coverage", "Victims Rescued", "SIS/100", "Safety (1-coll)"]
     archs = list(agg_by_arch.keys())
     fig, ax = plt.subplots(figsize=(10, 5.6))

@@ -12,25 +12,25 @@ For large-scale distributed training we also ship an RLlib configuration
 dependency-light reference used for unit tests and small experiments.
 """
 from __future__ import annotations
+
 import copy
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List
+
 import numpy as np
 
 from swarm_sar.config import Config
 from swarm_sar.drone.drone import ACTIONS
 from swarm_sar.environment.sar_env import SARSwarmEnv
 from swarm_sar.environment.vec_env import SubprocVecEnv
+from swarm_sar.policies.base import HAS_TORCH, PolicySpec, build_policy
 from swarm_sar.training.graph import (
     block_diag_adjacency,
     comm_adjacency,
     policy_uses_pyg_graph,
     torch_graph_from_adjacency,
 )
-from swarm_sar.mission.planner import HeuristicSwarmController
-from swarm_sar.policies.base import HAS_TORCH, build_policy, PolicySpec
 
 if HAS_TORCH:
     import torch
@@ -53,7 +53,7 @@ class RolloutBuffer:
         return cls([], [], [], [], [], [], [], [], [], [], 0.0)
 
 
-def merge_rollout_buffers(bufs: List[RolloutBuffer], group_size: int = 1) -> RolloutBuffer:
+def merge_rollout_buffers(bufs: list[RolloutBuffer], group_size: int = 1) -> RolloutBuffer:
     """Merge per-agent buffers into one stream, TIME-MAJOR within each env group.
 
     Buffers arrive ordered [env0_agent0, env0_agent1, ..., env1_agent0, ...].
@@ -165,7 +165,7 @@ def stage_env_cfg(base, stage: int):
     return cfg
 
 
-def merged_advantages_returns(bufs: List[RolloutBuffer], gamma: float, lam: float,
+def merged_advantages_returns(bufs: list[RolloutBuffer], gamma: float, lam: float,
                               group_size: int = 1):
     """Per-buffer GAE, interleaved in the same time-major order as
     :func:`merge_rollout_buffers` (advantage k belongs to merged transition k).
@@ -211,12 +211,12 @@ class MAPPOTrainer:
         # performance gating (see _apply_curriculum / _update_curriculum_gate).
         self._cur_stage = -1
         self._perf_stage = 0
-        
+
         # Local dummy env for metadata
         self.env = SARSwarmEnv(copy.deepcopy(cfg.env), seed=cfg.train.seed)
         self.env.reset(seed=cfg.train.seed)
         self.n = self.env.n
-        
+
         if self.num_envs > 0:
             self.vec_env = SubprocVecEnv(
                 [copy.deepcopy(cfg.env) for _ in range(self.num_envs)],
@@ -252,10 +252,10 @@ class MAPPOTrainer:
                     self.policies[0].load_state_dict(ckpt["state_dict"], strict=False)
                 print(f"resumed from {resume}")
 
-    def _global_state(self, obs: Dict[str, np.ndarray]) -> np.ndarray:
+    def _global_state(self, obs: dict[str, np.ndarray]) -> np.ndarray:
         return np.concatenate([obs[a].flatten() for a in self.env.possible_agents], dtype=np.float32)
 
-    def _adjacency(self, obs: Dict[str, np.ndarray]) -> np.ndarray:
+    def _adjacency(self, obs: dict[str, np.ndarray]) -> np.ndarray:
         # Observations contain a flattened temporal stack.  Use the newest GPS
         # frame and convert its [0, 1] coordinates back to world units before
         # applying the radio-range threshold.  Comparing normalized positions
@@ -276,7 +276,7 @@ class MAPPOTrainer:
     def _mask_tensor(self, masks: np.ndarray):
         return torch.tensor(masks, dtype=torch.float32, device=self.device)
 
-    def _expert_moves(self, expert_actions: Dict[str, object], masks_np: np.ndarray) -> List[int]:
+    def _expert_moves(self, expert_actions: dict[str, object], masks_np: np.ndarray) -> list[int]:
         moves = []
         for i, a in enumerate(self.env.possible_agents):
             move = self.env._split_action(expert_actions[a])[0]
@@ -292,20 +292,26 @@ class MAPPOTrainer:
         action_counts = np.zeros(self.env.n_actions, dtype=np.int64)
         started = time.perf_counter()
         env_steps = 0
-        
-        self.vec_env.init_expert(
-            [self.cfg.task_alloc.strategy] * self.num_envs,
-            [self.cfg.train.seed + env_idx * 1009 for env_idx in range(self.num_envs)]
-        )
+
+        # Expert (heuristic) actions are only needed for the imitation loss;
+        # querying the controller every step in every worker is pure overhead
+        # otherwise.
+        use_expert = self.cfg.train.imitation_coef > 0
+        if use_expert:
+            self.vec_env.init_expert(
+                [self.cfg.task_alloc.strategy] * self.num_envs,
+                [self.cfg.train.seed + env_idx * 1009 for env_idx in range(self.num_envs)]
+            )
         observations, _ = self.vec_env.reset()
+        no_expert_moves = [0] * self.n
 
         for _ in range(steps):
-            acts_by_env: List[Dict[str, int]] = [{} for _ in range(self.num_envs)]
-            step_cache_by_env: List[list] = [[] for _ in range(self.num_envs)]
-            
+            acts_by_env: list[dict[str, int]] = [{} for _ in range(self.num_envs)]
+            step_cache_by_env: list[list] = [[] for _ in range(self.num_envs)]
+
             masks_list = self.vec_env.action_masks()
-            expert_acts_list = self.vec_env.expert_act()
-            
+            expert_acts_list = self.vec_env.expert_act() if use_expert else None
+
             if self.cfg.train.policy_sharing == "independent":
                 for env_idx in range(self.num_envs):
                     obs = observations[env_idx]
@@ -313,7 +319,8 @@ class MAPPOTrainer:
                     gs = torch.tensor(gs_np, device=self.device).float()
                     adj = self._adjacency(obs)
                     masks_np = masks_list[env_idx]
-                    expert_moves = self._expert_moves(expert_acts_list[env_idx], masks_np)
+                    expert_moves = (self._expert_moves(expert_acts_list[env_idx], masks_np)
+                                    if use_expert else no_expert_moves)
                     for i, a in enumerate(self.env.possible_agents):
                         o = torch.tensor(obs[a], device=self.device).float().unsqueeze(0)
                         mask = self._mask_tensor(masks_np[i:i + 1])
@@ -335,7 +342,8 @@ class MAPPOTrainer:
                     gs_np = self._global_state(obs)
                     adj = self._adjacency(obs)
                     masks_np = masks_list[env_idx]
-                    expert_moves = self._expert_moves(expert_acts_list[env_idx], masks_np)
+                    expert_moves = (self._expert_moves(expert_acts_list[env_idx], masks_np)
+                                    if use_expert else no_expert_moves)
                     for i, a in enumerate(self.env.possible_agents):
                         rows.append(obs[a])
                         states.append(gs_np)
@@ -360,10 +368,10 @@ class MAPPOTrainer:
                         (i, o_np, ac, float(logp[row_idx].item()),
                          float(value[row_idx].item()), gs_np, adj, mask_np, expert_ac)
                     )
-            
+
             # SubprocVecEnv batches the execution
             nobs_list, rews_list, terms_list, truncs_list, infos_list = self.vec_env.step(acts_by_env)
-            
+
             for env_idx in range(self.num_envs):
                 nobs = nobs_list[env_idx]
                 rew = rews_list[env_idx]
@@ -393,11 +401,11 @@ class MAPPOTrainer:
                 if is_done:
                     completed.append(float(ep_returns[env_idx]))
                     ep_returns[env_idx] = 0.0
-                    
+
         # Compute bootstrap values for GAE
         bootstraps = [[0.0] * self.n for _ in range(self.num_envs)]
         masks_list = self.vec_env.action_masks()
-        
+
         if self.cfg.train.policy_sharing == "independent":
             for env_idx in range(self.num_envs):
                 obs = observations[env_idx]
@@ -430,16 +438,16 @@ class MAPPOTrainer:
             mask = self._mask_tensor(np.array(masks))
             with torch.no_grad():
                 _, _, value = policy.act(obs_batch, graph=graph, global_state=gs_batch, action_mask=mask)
-            
+
             for env_idx in range(self.num_envs):
                 for i in range(self.n):
                     bootstraps[env_idx][i] = float(value[env_idx * self.n + i].item())
-                    
+
         # Apply bootstrap values to buffers
         for env_idx in range(self.num_envs):
             for i in range(self.n):
                 bufs[env_idx * self.n + i].bootstrap_value = bootstraps[env_idx][i]
-                    
+
         elapsed = max(1e-9, time.perf_counter() - started)
         total_actions = max(1, int(action_counts.sum()))
         hover_frac = float(action_counts[ACTIONS.index("hover")] / total_actions)
@@ -481,27 +489,27 @@ class MAPPOTrainer:
         n_total = obs.shape[0]
         group_size = group_size or self.n
         T = max(1, n_total // group_size)
-        
+
         n_minibatches = max(1, getattr(c, 'minibatches', 1))
         mb_size_t = max(1, T // n_minibatches)
-        
+
         for _ in range(epochs):
             perm_t = torch.randperm(T)
             for mb_start in range(0, T, mb_size_t):
                 idx_t = perm_t[mb_start:mb_start + mb_size_t]
-                
+
                 # Expand rollout-block indices to transition indices
                 idx = []
                 for t in idx_t.tolist():
                     start = t * group_size
                     idx.extend(range(start, min(start + group_size, n_total)))
                 idx = torch.tensor(idx, device=self.device).long()
-                
+
                 mb_obs = obs[idx]; mb_gs = gs[idx]; mb_act = act[idx]
                 mb_old_lp = old_lp[idx]; mb_adv = adv_t[idx]; mb_ret = ret_t[idx]
                 mb_mask = mask[idx] if mask is not None else None
                 mb_expert = expert_t[idx] if expert_t is not None else None
-                
+
                 graph = None
                 if b.graphs and self.cfg.train.policy_sharing != "independent":
                     # Reconstruct block diagonal graph for this minibatch
@@ -542,7 +550,7 @@ class MAPPOTrainer:
         return (float(pi_loss.item()), float(v_loss.item()), float(ent.item()),
                 float(imitation_loss.item()))
 
-    def update(self, buffers: List[RolloutBuffer], entropy_coef: float = None) -> dict:
+    def update(self, buffers: list[RolloutBuffer], entropy_coef: float = None) -> dict:
         if entropy_coef is None:
             entropy_coef = self.cfg.train.entropy_coef
         c = self.cfg.train
@@ -587,16 +595,16 @@ class MAPPOTrainer:
             [self.cfg.train.seed + ep * 1009 for ep in range(self.num_envs)]
         )
         observations, _ = self.vec_env.reset()
-        
+
         rows, actions, masks, graphs, states = [], [], [], [], []
         # We need to collect `episodes` total full episodes
         # Since we have self.num_envs running in parallel, we run until we finish enough episodes.
         episodes_completed = 0
-        
+
         while episodes_completed < episodes:
             masks_list = self.vec_env.action_masks()
             expert_acts_list = self.vec_env.expert_act()
-            
+
             for env_idx in range(self.num_envs):
                 obs = observations[env_idx]
                 adj = self._adjacency(obs)
@@ -611,7 +619,7 @@ class MAPPOTrainer:
                 graphs.extend([adj for _ in range(self.n)])
                 gs = self._global_state(obs)
                 states.extend([gs for _ in range(self.n)])
-                
+
             nobs_list, rews_list, terms_list, truncs_list, infos_list = self.vec_env.step(expert_acts_list)
             for env_idx in range(self.num_envs):
                 observations[env_idx] = nobs_list[env_idx]
@@ -624,7 +632,7 @@ class MAPPOTrainer:
         act_np = np.array(actions)
         mask_np_arr = np.array(masks)
         gs_np = np.array(states)
-        
+
         loss_val = 0.0
         batch_blocks = 256
         batch_size = batch_blocks * self.n
@@ -785,17 +793,17 @@ class MAPPOTrainer:
             )
         for it in range(iters):
             self._apply_curriculum(it, iters)
-            
+
             # Linear entropy decay
             progress = it / max(1, iters - 1)
             current_entropy_coef = max(0.001, c.entropy_coef * (1.0 - progress))
-            
+
             bufs, ep_ret = self.collect(c.rollout_len)
             stats = self.update(bufs, entropy_coef=current_entropy_coef)
             stats["ep_return"] = ep_ret
             stats.update(self.last_collect_stats)
             print(f"Iter {it}/{iters} | Ep Ret: {ep_ret:.2f} | V Loss: {stats.get('v_loss', 0.0):.4f} | Pi Loss: {stats.get('pi_loss', 0.0):.4f} | Ent: {stats.get('entropy', 0.0):.4f}")
-            
+
             # Action distribution telemetry
             hover_pct = stats.get("action_hover_pct", 0.0) * 100
             n_pct = stats.get("action_north_pct", 0.0) * 100
@@ -803,7 +811,7 @@ class MAPPOTrainer:
             e_pct = stats.get("action_east_pct", 0.0) * 100
             w_pct = stats.get("action_west_pct", 0.0) * 100
             broadcast_pct = stats.get("action_broadcast_pct", 0.0) * 100
-            
+
             print(f"  Actions: Hover {hover_pct:.1f}% | N {n_pct:.1f}% | S {s_pct:.1f}% | E {e_pct:.1f}% | W {w_pct:.1f}% | Broadcast {broadcast_pct:.1f}%")
             if hover_pct > 60.0:
                 print("  [WARNING] Policy collapse detected: Hover > 60%")
@@ -831,11 +839,11 @@ class MAPPOTrainer:
                 logger.log_scalars(stats, step=it * rollout_env_steps)
             if it % max(1, (c.checkpoint_every // rollout_env_steps)) == 0:
                 self.save(checkpoint_dir / f"iter_{it}.pt")
-                
+
         # Close multiprocessing workers after training finishes
         if self.vec_env:
             self.vec_env.close()
-            
+
         return self
 
     def save(self, path):

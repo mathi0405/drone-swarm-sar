@@ -8,11 +8,12 @@ battery-aware return-to-charge, and cooperative victim assignment via the
 pluggable :class:`~swarm_sar.mission.task_allocation.TaskAllocator`.
 """
 from __future__ import annotations
+
 from enum import Enum
-from typing import Dict, List
+
 import numpy as np
 
-from swarm_sar.drone.drone import ACTIONS, ACTION_TO_IDX
+from swarm_sar.drone.drone import ACTION_TO_IDX, ACTIONS
 from swarm_sar.mission.task_allocation import TaskAllocator
 
 MOVE_ACTIONS = ("north", "south", "east", "west")
@@ -59,7 +60,7 @@ class HeuristicSwarmController:
         self.rng = np.random.default_rng(seed)
         self.allocator = TaskAllocator(strategy, self.rng)
         self.planners = [MissionPlanner() for _ in range(env.n)]
-        self._frontier_target: Dict[int, np.ndarray] = {}
+        self._frontier_target: dict[int, np.ndarray] = {}
         self._broadcast_cooldown = np.zeros(env.n, dtype=int)
 
     # -- helpers ---------------------------------------------------------- #
@@ -91,14 +92,14 @@ class HeuristicSwarmController:
         return int(valid[0]) if len(valid) else ACTION_TO_IDX["hover"]
 
     # -- main ------------------------------------------------------------- #
-    def act(self) -> Dict[str, int]:
+    def act(self) -> dict[str, int]:
         env = self.env
-        actions: Dict[str, int] = {}
+        actions: dict[str, int] = {}
 
         # cooperative victim assignment among alive drones
         victims = [v for v in env.world.victims if v.detected and not v.rescued]
         alive_idx = [i for i in range(env.n) if env.drones[i].mission.alive]
-        assign: Dict[int, int] = {}
+        assign: dict[int, int] = {}
         if victims and alive_idx:
             dpos = np.array([env.drones[i].kinematics.pos for i in alive_idx])
             vpos = np.array([v.pos for v in victims])

@@ -1,6 +1,6 @@
 """Neural-policy tests. Skipped automatically when PyTorch is not installed."""
-from swarm_sar.policies.base import HAS_TORCH, build_policy, PolicySpec
 from swarm_sar.config import ModelConfig
+from swarm_sar.policies.base import HAS_TORCH, PolicySpec, build_policy
 
 
 def _spec():
@@ -60,6 +60,6 @@ def test_factory_requires_torch_message():
         return
     try:
         build_policy(ModelConfig(arch="mlp"), _spec())
-        assert False, "should have raised"
+        raise AssertionError("should have raised")
     except ImportError as e:
         assert "PyTorch" in str(e)

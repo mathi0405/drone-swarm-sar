@@ -1,6 +1,6 @@
 """Policy networks for MAPPO (CTDE). Torch is an *optional* dependency; importing
 this subpackage without torch is fine until you actually build a network."""
-from swarm_sar.policies.base import build_policy, HAS_TORCH  # noqa: F401
+from swarm_sar.policies.base import HAS_TORCH, build_policy  # noqa: F401
 
 
 def load_policy(checkpoint: str):

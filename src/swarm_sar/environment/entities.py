@@ -1,7 +1,9 @@
 """Static & dynamic entities that populate the disaster world."""
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 from enum import IntEnum
+
 import numpy as np
 
 

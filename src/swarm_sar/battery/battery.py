@@ -1,6 +1,7 @@
 """Energy model: consumption depends on speed/altitude/comm/sensor usage,
 with charging, emergency-return thresholds and capacity degradation (sim-to-real)."""
 from __future__ import annotations
+
 from swarm_sar.config import BatteryConfig
 
 

@@ -15,7 +15,7 @@ figures:        ## Regenerate all publication figures
 train:          ## Train MAPPO (see configs/training/*.yaml)
 	$(PY) scripts/train.py --config configs/training/mappo_transformer_gnn.yaml
 train-real:     ## Turnkey GPU run: train->eval->REAL figures (needs .[rl])
-	$(PY) scripts/train_and_report.py --archs mlp gnn transformer transformer_gnn --seeds 0 1 2 --timesteps 1000000
+	$(PY) scripts/train_and_report.py --archs mlp gru gnn transformer transformer_gnn --seeds 0 1 2 --timesteps 1000000
 smoke-train:    ## Tiny end-to-end training validation (~1-2 min)
 	$(PY) scripts/train_and_report.py --smoke
 evaluate:       ## Evaluate a trained checkpoint

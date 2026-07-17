@@ -6,6 +6,7 @@ variable-cardinality treatment of neighbours and received messages, and yields
 the attention maps visualized in Figure 15.
 """
 from __future__ import annotations
+
 import torch
 import torch.nn as nn
 

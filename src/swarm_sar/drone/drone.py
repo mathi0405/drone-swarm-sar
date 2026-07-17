@@ -1,11 +1,13 @@
 """Per-drone state container and low-level command interface."""
 from __future__ import annotations
+
 from dataclasses import dataclass, field
+
 import numpy as np
 
+from swarm_sar.battery.battery import Battery
 from swarm_sar.config import EnvConfig
 from swarm_sar.drone.dynamics import PointMassDynamics
-from swarm_sar.battery.battery import Battery
 from swarm_sar.sensors.sensors import SensorSuite
 
 # Discrete action set (see docs/architecture.md)
@@ -44,7 +46,7 @@ class _DroneStateView:
     duplicating state.
     """
 
-    def __init__(self, drone: "Drone"):
+    def __init__(self, drone: Drone):
         self._drone = drone
 
     @property
@@ -140,10 +142,10 @@ class Drone:
         m = self.mission
         f = self.faults
         info = {"moved": False, "broadcast": False, "returned": False, "action": action}
-        
+
         if not m.alive:
             return info
-            
+
         name = ACTIONS[action] if 0 <= action < len(ACTIONS) else "hover"
         speed_scale = self.cfg.faults.motor_degradation_factor if f.motor_degraded else 1.0
 

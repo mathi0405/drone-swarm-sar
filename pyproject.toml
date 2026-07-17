@@ -54,7 +54,12 @@ target-version = ["py311"]
 line-length = 100
 target-version = "py311"
 lint.select = ["E", "F", "I", "W", "UP", "B"]
-lint.ignore = ["E501", "B008"]
+# E501: long lines are allowed (line-length is advisory here).
+# B008: pydantic Field(default_factory=...) pattern.
+# E701/E702: the codebase deliberately uses compact one-line statements for
+#            dense numerical code (e.g. `self.cfg = cfg; self.rng = rng`).
+# B905: zips pair equal-length arrays throughout; strict= would add noise on 3.9.
+lint.ignore = ["E501", "B008", "E701", "E702", "B905"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,5 +1,6 @@
 """Publication styling: consistent fonts, palette and per-drone colors."""
 from __future__ import annotations
+
 import matplotlib as mpl
 from matplotlib.colors import ListedColormap
 

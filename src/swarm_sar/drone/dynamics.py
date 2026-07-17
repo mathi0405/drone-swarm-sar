@@ -5,6 +5,7 @@ can run many parallel episodes on CPU. The AirSim adapter replaces this with the
 full rigid-body model when high-fidelity sim-to-real evaluation is required.
 """
 from __future__ import annotations
+
 import numpy as np
 
 

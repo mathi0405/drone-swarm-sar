@@ -1,2 +1,6 @@
-from swarm_sar.mission.task_allocation import TaskAllocator, ALLOCATORS  # noqa: F401
-from swarm_sar.mission.planner import MissionPlanner, HeuristicSwarmController, MissionState  # noqa: F401
+from swarm_sar.mission.planner import (  # noqa: F401
+    HeuristicSwarmController,
+    MissionPlanner,
+    MissionState,
+)
+from swarm_sar.mission.task_allocation import ALLOCATORS, TaskAllocator  # noqa: F401

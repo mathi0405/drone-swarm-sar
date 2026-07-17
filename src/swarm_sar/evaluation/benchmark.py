@@ -6,21 +6,23 @@ eval seeds and configs; results are therefore directly comparable across methods
 and reproducible across machines.
 """
 from __future__ import annotations
-from typing import Callable, Dict, List, Tuple
+
+from collections.abc import Callable
+
 import numpy as np
 
 from swarm_sar.config import EnvConfig, WorldConfig
 from swarm_sar.environment.sar_env import SARSwarmEnv
-from swarm_sar.training.rollout import run_episode
 from swarm_sar.evaluation.metrics import episode_metrics
-from swarm_sar.evaluation.stats import iqm, bootstrap_ci
+from swarm_sar.evaluation.stats import bootstrap_ci, iqm
+from swarm_sar.training.rollout import run_episode
 
 BENCHMARK_VERSION = "v1"
 IN_DIST_SEEDS = list(range(200, 220))          # 20 held-out maps
 OOD_SEEDS = list(range(300, 315))              # 15 harder maps
 
 
-def suite(regime: str = "in_dist") -> List[Tuple[int, EnvConfig]]:
+def suite(regime: str = "in_dist") -> list[tuple[int, EnvConfig]]:
     """Return the frozen (seed, EnvConfig) pairs for a benchmark regime."""
     if regime == "in_dist":
         base = EnvConfig(num_drones=3, max_steps=200, world=WorldConfig(size=64, n_victims=8))
@@ -38,7 +40,7 @@ def suite(regime: str = "in_dist") -> List[Tuple[int, EnvConfig]]:
 
 
 def run_method(actor_factory: Callable[[SARSwarmEnv], Callable],
-               regime: str = "in_dist") -> Dict[str, np.ndarray]:
+               regime: str = "in_dist") -> dict[str, np.ndarray]:
     """Run one method across the frozen suite; return arrays of per-map metrics."""
     rows = []
     for seed, cfg in suite(regime):
@@ -49,15 +51,15 @@ def run_method(actor_factory: Callable[[SARSwarmEnv], Callable],
     return {k: np.array([r[k] for r in rows], dtype=float) for k in keys}
 
 
-def summarize_method(arrays: Dict[str, np.ndarray], key: str = "swarm_intelligence_score") -> Dict:
+def summarize_method(arrays: dict[str, np.ndarray], key: str = "swarm_intelligence_score") -> dict:
     x = arrays[key]
     lo, hi = bootstrap_ci(x)
     return {"iqm": iqm(x), "ci95_low": lo, "ci95_high": hi,
             "mean": float(x.mean()), "std": float(x.std()), "n": int(x.size)}
 
 
-def compare(methods: Dict[str, Callable], regime: str = "in_dist",
-            key: str = "swarm_intelligence_score") -> Dict[str, Dict]:
+def compare(methods: dict[str, Callable], regime: str = "in_dist",
+            key: str = "swarm_intelligence_score") -> dict[str, dict]:
     """Run every method on the frozen suite and summarize the target metric."""
     out = {}
     for name, factory in methods.items():

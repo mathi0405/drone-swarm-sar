@@ -1,6 +1,7 @@
 import numpy as np
-from swarm_sar.config import CommConfig
+
 from swarm_sar.communication.comms import CommNetwork, Message, compress_payload
+from swarm_sar.config import CommConfig
 
 
 def _pos():

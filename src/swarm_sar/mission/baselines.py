@@ -13,7 +13,7 @@ heuristic:
 Each exposes ``act() -> {agent: action}`` and is wrapped by :class:`ControllerActor`.
 """
 from __future__ import annotations
-from typing import Dict
+
 import numpy as np
 
 from swarm_sar.drone.drone import ACTION_TO_IDX
@@ -40,7 +40,7 @@ class LawnmowerController:
         self.env = env
         self.dir = [1] * env.n
 
-    def act(self) -> Dict[str, int]:
+    def act(self) -> dict[str, int]:
         env = self.env; S = env.world.size; acts = {}
         band = S / max(1, env.n)
         for i, d in enumerate(env.drones):
@@ -64,8 +64,8 @@ class FrontierController:
     def __init__(self, env, seed=0, **_):
         self.env = env; self.rng = np.random.default_rng(seed)
 
-    def act(self) -> Dict[str, int]:
-        env = self.env; S = env.world.size; acts = {}
+    def act(self) -> dict[str, int]:
+        env = self.env; acts = {}
         victims = [v for v in env.world.victims if v.detected and not v.rescued]
         for i, d in enumerate(env.drones):
             if not d.mission.alive:
@@ -96,7 +96,7 @@ class FrontierController:
 
 class GreedyTSPController(FrontierController):
     """Assign victims by nearest and visit each drone's set in NN-tour order."""
-    def act(self) -> Dict[str, int]:
+    def act(self) -> dict[str, int]:
         env = self.env; acts = {}
         victims = [v for v in env.world.victims if v.detected and not v.rescued]
         alive = [i for i in range(env.n) if env.drones[i].mission.alive]
@@ -125,7 +125,7 @@ class LloydController:
     def __init__(self, env, **_):
         self.env = env
 
-    def act(self) -> Dict[str, int]:
+    def act(self) -> dict[str, int]:
         env = self.env; S = env.world.size; acts = {}
         pts = np.array([d.kinematics.pos for d in env.drones])
         # subsample unexplored, flyable cells as the density to cover
@@ -153,7 +153,7 @@ class OracleController:
     def __init__(self, env, **_):
         self.env = env; self.alloc = TaskAllocator("hungarian")
 
-    def act(self) -> Dict[str, int]:
+    def act(self) -> dict[str, int]:
         env = self.env; acts = {}
         remaining = [v for v in env.world.victims if not v.rescued]
         alive = [i for i in range(env.n) if env.drones[i].mission.alive]

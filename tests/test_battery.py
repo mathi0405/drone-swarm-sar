@@ -1,7 +1,8 @@
-from swarm_sar.config import BatteryConfig
-from swarm_sar.battery.battery import Battery
-from swarm_sar.mission.task_allocation import TaskAllocator
 import numpy as np
+
+from swarm_sar.battery.battery import Battery
+from swarm_sar.config import BatteryConfig
+from swarm_sar.mission.task_allocation import TaskAllocator
 
 
 def test_consumption_decreases_soc():

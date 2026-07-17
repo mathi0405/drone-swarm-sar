@@ -1,11 +1,11 @@
 """Multiprocessing Vector Environment wrapper."""
 import multiprocessing as mp
-from typing import List, Dict, Tuple
 import traceback
 
-from swarm_sar.environment.sar_env import SARSwarmEnv
 from swarm_sar.config import EnvConfig
+from swarm_sar.environment.sar_env import SARSwarmEnv
 from swarm_sar.mission.planner import HeuristicSwarmController
+
 
 def worker(remote, parent_remote, cfg: EnvConfig, seed: int):
     parent_remote.close()
@@ -72,11 +72,11 @@ def worker(remote, parent_remote, cfg: EnvConfig, seed: int):
         remote.send(("ERROR", str(e), traceback.format_exc()))
 
 class SubprocVecEnv:
-    def __init__(self, cfgs: List[EnvConfig], seeds: List[int]):
+    def __init__(self, cfgs: list[EnvConfig], seeds: list[int]):
         self.waiting = False
         self.closed = False
         self.num_envs = len(cfgs)
-        
+
         ctx = mp.get_context('spawn')
         self.remotes, self.work_remotes = zip(*[ctx.Pipe() for _ in range(self.num_envs)])
         self.ps = []
@@ -105,23 +105,23 @@ class SubprocVecEnv:
         results = [self._receive(remote) for remote in self.remotes]
         obs, infos = zip(*results)
         return list(obs), list(infos)
-        
+
     def action_masks(self):
         for remote in self.remotes:
             remote.send(('action_masks', None))
         return [self._receive(remote) for remote in self.remotes]
-        
-    def init_expert(self, strategies: List[str], seeds: List[int]):
+
+    def init_expert(self, strategies: list[str], seeds: list[int]):
         for remote, strat, seed in zip(self.remotes, strategies, seeds):
             remote.send(('init_expert', {'strategy': strat, 'seed': seed}))
         return [self._receive(remote) for remote in self.remotes]
-        
+
     def expert_act(self):
         for remote in self.remotes:
             remote.send(('expert_act', None))
         return [self._receive(remote) for remote in self.remotes]
-        
-    def set_cfg(self, cfgs: List[EnvConfig]):
+
+    def set_cfg(self, cfgs: list[EnvConfig]):
         for remote, cfg in zip(self.remotes, cfgs):
             remote.send(('set_cfg', cfg))
         return [self._receive(remote) for remote in self.remotes]

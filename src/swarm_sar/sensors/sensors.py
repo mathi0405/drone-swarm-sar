@@ -5,7 +5,9 @@ Sensor noise is central to the research question (sim-to-real): all readings are
 corrupted, and detection is probabilistic and occlusion-aware.
 """
 from __future__ import annotations
+
 import numpy as np
+
 from swarm_sar.config import SensorConfig
 
 

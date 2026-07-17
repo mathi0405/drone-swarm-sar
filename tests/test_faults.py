@@ -1,4 +1,5 @@
 import numpy as np
+
 from swarm_sar.config import EnvConfig
 from swarm_sar.environment.sar_env import SARSwarmEnv
 

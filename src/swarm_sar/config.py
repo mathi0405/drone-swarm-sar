@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
+
 import yaml
 from pydantic import BaseModel, Field
+
 
 class WorldConfig(BaseModel):
     size: int = 64
@@ -68,10 +70,10 @@ class CommConfig(BaseModel):
     auto_broadcast: bool = True
     heartbeat_interval_steps: int = 6
     coverage_delta_threshold: int = 12
-    message_types: List[str] = Field(
+    message_types: list[str] = Field(
         default_factory=lambda: ["victim", "coverage", "battery", "target", "heartbeat"]
     )
-    priority_by_type: Dict[str, int] = Field(
+    priority_by_type: dict[str, int] = Field(
         default_factory=lambda: {
             "victim": 100,
             "target": 80,
@@ -149,7 +151,7 @@ class EnvConfig(BaseModel):
     # ascend/descend/rotate are excluded by default: altitude and yaw affect
     # only energy in the 2.5-D simulation, so they act as pure noise actions
     # for the learner.  Re-enable them explicitly for altitude experiments.
-    allowed_actions: List[str] = Field(default_factory=lambda: [
+    allowed_actions: list[str] = Field(default_factory=lambda: [
         "hover", "north", "south", "east", "west", "broadcast", "return_to_base",
     ])
     world: WorldConfig = Field(default_factory=WorldConfig)
@@ -202,7 +204,7 @@ class TrainConfig(BaseModel):
     # floor so training always reaches full difficulty within budget).
     # "linear": fixed 20%-of-training per stage.
     curriculum_mode: str = "performance"
-    curriculum_rescue_thresholds: List[float] = Field(
+    curriculum_rescue_thresholds: list[float] = Field(
         default_factory=lambda: [0.9, 0.8, 0.7, 0.6])
     collapse_action_threshold: float = 0.8
 
@@ -215,7 +217,7 @@ class LogConfig(BaseModel):
     log_tensorboard: bool = True
     log_csv: bool = True
     log_video: bool = True
-    seeds: List[int] = Field(default_factory=lambda: [0, 1, 2])
+    seeds: list[int] = Field(default_factory=lambda: [0, 1, 2])
 
 class Config(BaseModel):
     env: EnvConfig = Field(default_factory=EnvConfig)
@@ -224,7 +226,7 @@ class Config(BaseModel):
     task_alloc: TaskAllocConfig = Field(default_factory=TaskAllocConfig)
     log: LogConfig = Field(default_factory=LogConfig)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return self.model_dump()
 
     def save(self, path: str | Path) -> None:
@@ -240,7 +242,7 @@ def _deep_merge_dict(d: dict, u: dict) -> dict:
             d[k] = v
     return d
 
-def load_config(path: Optional[str | Path] = None, **overrides: Any) -> Config:
+def load_config(path: str | Path | None = None, **overrides: Any) -> Config:
     data = {}
     if path is not None:
         with open(path, encoding="utf-8-sig") as f:

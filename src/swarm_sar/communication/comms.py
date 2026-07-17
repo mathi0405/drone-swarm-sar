@@ -6,8 +6,10 @@ and dropped with probability `packet_loss`. This module is the substrate for the
 research question on how communication quality shapes swarm intelligence.
 """
 from __future__ import annotations
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Tuple
+
+from dataclasses import dataclass
+from typing import Any
+
 import numpy as np
 
 from swarm_sar.config import CommConfig
@@ -63,11 +65,11 @@ class CommNetwork:
         self.rng = rng
         self.n = n_agents
         # queue of (deliver_step, -priority, sequence, receiver, Message)
-        self._inflight: List[Tuple[int, int, int, int, Message]] = []
-        self.delivered: Dict[int, List[Message]] = {i: [] for i in range(n_agents)}
+        self._inflight: list[tuple[int, int, int, int, Message]] = []
+        self.delivered: dict[int, list[Message]] = {i: [] for i in range(n_agents)}
         self.n_sent = 0
         self.n_delivered = 0
-        self.edges_this_step: List[Tuple[int, int]] = []
+        self.edges_this_step: list[tuple[int, int]] = []
         self._seq = 0
         self.congestion = 0.0
 
@@ -79,8 +81,8 @@ class CommNetwork:
         self._seq = 0
         self.congestion = 0.0
 
-    def broadcast(self, sender: int, positions: Dict[int, np.ndarray],
-                  msg: Message, alive: Dict[int, bool], comm_ok: Dict[int, bool]) -> None:
+    def broadcast(self, sender: int, positions: dict[int, np.ndarray],
+                  msg: Message, alive: dict[int, bool], comm_ok: dict[int, bool]) -> None:
         """Enqueue a message to every in-range, reachable peer."""
         if not comm_ok.get(sender, True):
             return
@@ -115,9 +117,9 @@ class CommNetwork:
         the links formed this step.
         """
         self.delivered = {i: [] for i in range(self.n)}
-        remaining: List[Tuple[int, int, int, int, Message]] = []
+        remaining: list[tuple[int, int, int, int, Message]] = []
         counts = {i: 0 for i in range(self.n)}
-        ready: List[Tuple[int, int, int, int, Message]] = []
+        ready: list[tuple[int, int, int, int, Message]] = []
         for item in self._inflight:
             if item[0] <= now:
                 ready.append(item)
@@ -128,7 +130,7 @@ class CommNetwork:
         # Sort by priority (neg_priority ascending means highest priority first), then deliver time, then seq
         ready.sort(key=lambda item: (item[1], item[0], item[2]))
         dropped_for_bandwidth = 0
-        for deliver, neg_priority, seq, r, msg in ready:
+        for deliver, _priority, _seq, r, msg in ready:
             if deliver <= now:
                 if counts[r] < self._effective_bandwidth():
                     self.delivered[r].append(msg)
@@ -146,14 +148,14 @@ class CommNetwork:
             return max(self.cfg.min_bandwidth_msgs, self.cfg.bandwidth_msgs - 1)
         return self.cfg.bandwidth_msgs
 
-    def inbox(self, agent: int) -> List[Message]:
+    def inbox(self, agent: int) -> list[Message]:
         return self.delivered.get(agent, [])
 
-    def connected_components(self, positions: Dict[int, np.ndarray],
-                             alive: Dict[int, bool], comm_ok: Dict[int, bool]) -> List[List[int]]:
+    def connected_components(self, positions: dict[int, np.ndarray],
+                             alive: dict[int, bool], comm_ok: dict[int, bool]) -> list[list[int]]:
         """Return communication components under current range/fault constraints."""
         seen = set()
-        comps: List[List[int]] = []
+        comps: list[list[int]] = []
         for start in range(self.n):
             if start in seen or not alive.get(start, False) or not comm_ok.get(start, True):
                 continue

@@ -74,7 +74,7 @@ def main() -> None:
         import optuna
     except ImportError:
         raise SystemExit("Optuna is not installed. Install the tuning extras: "
-                         'pip install -e ".[tune]"')
+                         'pip install -e ".[tune]"') from None
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)

@@ -8,6 +8,7 @@ seed and are always labelled "illustrative" in the figure. Replace them with rea
 TensorBoard/CSV logs from ``scripts/train.py`` for publication.
 """
 from __future__ import annotations
+
 import numpy as np
 
 ARCHS = ["PPO", "PPO+GNN", "PPO+Transformer", "PPO+Transformer+GNN"]

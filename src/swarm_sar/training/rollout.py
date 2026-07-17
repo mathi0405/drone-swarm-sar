@@ -6,24 +6,30 @@ non-learned controller so the whole pipeline runs without PyTorch; a neural acto
 wrapping a trained :class:`ActorCritic` is used after training.
 """
 from __future__ import annotations
+
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional
+
 import numpy as np
 
 from swarm_sar.environment.sar_env import SARSwarmEnv
 from swarm_sar.mission.planner import HeuristicSwarmController
-from swarm_sar.training.graph import comm_adjacency, policy_uses_pyg_graph, torch_graph_from_adjacency
+from swarm_sar.training.graph import (
+    comm_adjacency,
+    policy_uses_pyg_graph,
+    torch_graph_from_adjacency,
+)
 
 
 @dataclass
 class EpisodeLog:
-    frames: List[dict] = field(default_factory=list)
+    frames: list[dict] = field(default_factory=list)
     summary: dict = field(default_factory=dict)
     total_reward: float = 0.0
-    collisions: List[dict] = field(default_factory=list)
-    world_grid: Optional[np.ndarray] = None
-    victims: List[dict] = field(default_factory=list)
-    charging: List[list] = field(default_factory=list)
+    collisions: list[dict] = field(default_factory=list)
+    world_grid: np.ndarray | None = None
+    victims: list[dict] = field(default_factory=list)
+    charging: list[list] = field(default_factory=list)
 
 
 class HeuristicActor:
@@ -31,11 +37,11 @@ class HeuristicActor:
     def __init__(self, env: SARSwarmEnv, strategy: str = "auction", seed: int = 0):
         self.ctl = HeuristicSwarmController(env, strategy=strategy, seed=seed)
 
-    def __call__(self, obs: Dict[str, np.ndarray]) -> Dict[str, int]:
+    def __call__(self, obs: dict[str, np.ndarray]) -> dict[str, int]:
         return self.ctl.act()
 
 
-def run_episode(env: SARSwarmEnv, actor: Callable, seed: Optional[int] = None,
+def run_episode(env: SARSwarmEnv, actor: Callable, seed: int | None = None,
                 record: bool = True) -> EpisodeLog:
     obs, _ = env.reset(seed=seed)
     if hasattr(actor, "bind_env"):
@@ -64,7 +70,7 @@ class RolloutWorker:
         self.env_fn = env_fn
         self.actor_fn = actor_fn
 
-    def collect(self, seeds: List[int]) -> List[EpisodeLog]:
+    def collect(self, seeds: list[int]) -> list[EpisodeLog]:
         logs = []
         for s in seeds:
             env = self.env_fn(s)
@@ -125,6 +131,6 @@ class NeuralActor:
         return acts
 
 
-def load_neural_actor(checkpoint: str, deterministic: bool = True) -> "NeuralActor":
+def load_neural_actor(checkpoint: str, deterministic: bool = True) -> NeuralActor:
     from swarm_sar.policies import load_policy
     return NeuralActor(load_policy(checkpoint), deterministic=deterministic)

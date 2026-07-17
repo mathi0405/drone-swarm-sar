@@ -8,16 +8,14 @@ the 10-drone configuration when horizontal scaling matters more than the
 centralized value function.
 """
 from __future__ import annotations
-from typing import Optional
 
 from swarm_sar.config import Config
 
 try:
-    import ray
+    import gymnasium as gym
     from ray import tune
     from ray.rllib.algorithms.ppo import PPOConfig
     from ray.rllib.env.multi_agent_env import MultiAgentEnv
-    import gymnasium as gym
     _HAS_RLLIB = True
 except Exception:
     _HAS_RLLIB = False

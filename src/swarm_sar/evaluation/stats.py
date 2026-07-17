@@ -6,7 +6,9 @@ performance profiles. Pure NumPy so there is no hard `rliable` dependency; if
 `rliable` is installed you may prefer it for publication plots.
 """
 from __future__ import annotations
-from typing import Dict, Sequence, Tuple
+
+from collections.abc import Sequence
+
 import numpy as np
 
 
@@ -21,7 +23,7 @@ def iqm(x: Sequence[float]) -> float:
 
 
 def bootstrap_ci(x: Sequence[float], statistic=iqm, n_boot: int = 10000,
-                 ci: float = 0.95, seed: int = 0) -> Tuple[float, float]:
+                 ci: float = 0.95, seed: int = 0) -> tuple[float, float]:
     """Percentile bootstrap CI for a 1-D sample."""
     x = np.asarray(x, dtype=float)
     if x.size == 0:
@@ -34,7 +36,7 @@ def bootstrap_ci(x: Sequence[float], statistic=iqm, n_boot: int = 10000,
 
 
 def stratified_bootstrap_ci(scores: np.ndarray, statistic=iqm, n_boot: int = 10000,
-                            ci: float = 0.95, seed: int = 0) -> Tuple[float, float]:
+                            ci: float = 0.95, seed: int = 0) -> tuple[float, float]:
     """CI for a (runs x tasks) score matrix; resamples runs within each task."""
     scores = np.asarray(scores, dtype=float)
     if scores.ndim == 1:
@@ -50,7 +52,7 @@ def stratified_bootstrap_ci(scores: np.ndarray, statistic=iqm, n_boot: int = 100
     return (float(np.quantile(stats, a)), float(np.quantile(stats, 1 - a)))
 
 
-def performance_profile(scores: Sequence[float], taus: np.ndarray = None) -> Dict[str, np.ndarray]:
+def performance_profile(scores: Sequence[float], taus: np.ndarray = None) -> dict[str, np.ndarray]:
     """Run-score distribution: fraction of runs with score > tau, over a tau grid."""
     scores = np.asarray(scores, dtype=float)
     if taus is None:
@@ -68,7 +70,7 @@ def probability_of_improvement(a: Sequence[float], b: Sequence[float]) -> float:
     return float((a[:, None] > b[None, :]).mean())
 
 
-def summarize(scores: Sequence[float]) -> Dict[str, float]:
+def summarize(scores: Sequence[float]) -> dict[str, float]:
     """IQM + 95% bootstrap CI + median + mean for a 1-D sample."""
     lo, hi = bootstrap_ci(scores)
     x = np.asarray(scores, dtype=float)

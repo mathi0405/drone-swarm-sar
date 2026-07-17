@@ -1,6 +1,10 @@
 import numpy as np
+
 from swarm_sar.evaluation.metrics import (
-    swarm_intelligence_score, aggregate, exploration_entropy, episode_diagnostics,
+    aggregate,
+    episode_diagnostics,
+    exploration_entropy,
+    swarm_intelligence_score,
 )
 
 

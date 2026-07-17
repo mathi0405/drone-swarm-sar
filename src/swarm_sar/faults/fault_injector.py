@@ -5,7 +5,7 @@ motor degradation. Each is sampled per-drone per-step from configurable rates.
 The evaluator measures how gracefully the swarm degrades and recovers.
 """
 from __future__ import annotations
-from typing import Dict, List
+
 import numpy as np
 
 from swarm_sar.config import FaultConfig
@@ -15,7 +15,7 @@ class FaultInjector:
     def __init__(self, cfg: FaultConfig, rng: np.random.Generator):
         self.cfg = cfg
         self.rng = rng
-        self.events: List[dict] = []
+        self.events: list[dict] = []
 
     def reset(self) -> None:
         self.events = []
@@ -53,8 +53,8 @@ class FaultInjector:
     def _log(self, drone: int, kind: str, t: int) -> None:
         self.events.append({"drone": drone, "type": kind, "step": t})
 
-    def summary(self) -> Dict[str, int]:
-        out: Dict[str, int] = {}
+    def summary(self) -> dict[str, int]:
+        out: dict[str, int] = {}
         for e in self.events:
             out[e["type"]] = out.get(e["type"], 0) + 1
         return out

@@ -90,7 +90,8 @@ def _run_one(base_cfg, arch: str, seed: int, timesteps: int | None, out_dir: Pat
 
     # Preserve the benchmark configuration rather than evaluating only the
     # final curriculum stage mutated inside the trainer.
-    actor_factory = lambda env: load_neural_actor(str(checkpoint), deterministic=True)
+    def actor_factory(env, _ckpt=str(checkpoint)):
+        return load_neural_actor(_ckpt, deterministic=True)
     evaluator = Evaluator(base_cfg.env.model_copy(deep=True), actor_factory)
     evaluation = evaluator.evaluate(eval_seeds)
     per_seed = evaluation["per_seed"]

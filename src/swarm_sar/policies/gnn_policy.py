@@ -1,5 +1,6 @@
 """Graph Neural Network encoder for inter-drone relational reasoning."""
 from __future__ import annotations
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -24,37 +25,37 @@ class _ManualGAT(nn.Module):
     def forward(self, h, adj, attr=None):                       # h:(N,D) adj:(N,N) or (B,A,A)
         wh = self.w(h)
         v = self.v(h)
-        
+
         if adj.dim() == 3:
             B, A = adj.shape[0], adj.shape[1]
             wh = wh.view(B, A, 1, -1)
             wh_j = wh.view(B, 1, A, -1)
-            
+
             e_attr = 0
             if attr is not None:
                 e_attr = self.edge_proj(attr)
-                
+
             e = F.leaky_relu(wh + wh_j + e_attr, 0.2)
             att = self.a(e).squeeze(-1) * self.scale
-            
+
             att = att.masked_fill(adj < 0.5, float("-inf"))
             att = torch.softmax(att, dim=-1)
             att = torch.nan_to_num(att)
-            
+
             v = v.view(B, A, -1)
             out = torch.bmm(att, v)
             return h + out.view(B * A, -1)
         else:
             wh_i = wh.unsqueeze(1)
             wh_j = wh.unsqueeze(0)
-            
+
             e_attr = 0
             if attr is not None:
                 e_attr = self.edge_proj(attr)
-                
+
             e = F.leaky_relu(wh_i + wh_j + e_attr, 0.2)
             att = self.a(e).squeeze(-1) * self.scale
-            
+
             att = att.masked_fill(adj < 0.5, float("-inf"))
             att = torch.softmax(att, dim=-1)
             att = torch.nan_to_num(att)                  # isolated nodes -> zero msg
@@ -72,7 +73,7 @@ class GNNEncoder(nn.Module):
             from swarm_sar.policies.comm_head import LearnedCommHead
             self.comm_head = LearnedCommHead(
                 hidden, bandwidth=getattr(cfg, "comm_bandwidth", 4))
-            
+
         if _HAS_PYG:
             if cfg.gnn_type == "gat":
                 self.convs = nn.ModuleList([GATv2Conv(hidden, hidden, edge_dim=3, add_self_loops=True) for _ in range(self.rounds)])
@@ -81,7 +82,7 @@ class GNNEncoder(nn.Module):
                 self.convs = nn.ModuleList([conv(hidden, hidden) for _ in range(self.rounds)])
         else:
             self.convs = nn.ModuleList([_ManualGAT(hidden) for _ in range(self.rounds)])
-            
+
         self.norms = nn.ModuleList([nn.LayerNorm(hidden) for _ in range(self.rounds)])
 
     def forward(self, obs, graph=None):
@@ -90,7 +91,7 @@ class GNNEncoder(nn.Module):
         h = self.embed(obs)
         if graph is None:
             return h
-            
+
         packet_keep = None
         if isinstance(graph, torch.Tensor):
             dense_adj = graph.float()
@@ -116,7 +117,7 @@ class GNNEncoder(nn.Module):
                 # mirror that layout for the keep mask.
                 packet_keep = torch.block_diag(*packet_keep.unbind(0))
             h = h + self.comm_head(h, dense_adj, packet_keep=packet_keep)
-            
+
         for conv, norm in zip(self.convs, self.norms):
             h_in = h
             if self._pyg:
@@ -126,7 +127,7 @@ class GNNEncoder(nn.Module):
                     h_out = conv(h, edge_idx)
             else:
                 h_out = conv(h, dense_adj, edge_attr)
-                
+
             h = norm(h_in + torch.tanh(h_out)) # Residual + LayerNorm
         return h
 

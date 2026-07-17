@@ -9,6 +9,7 @@ inside a single forward pass, so it drops into MAPPO without hidden-state
 plumbing in the rollout buffers.
 """
 from __future__ import annotations
+
 import torch
 import torch.nn as nn
 

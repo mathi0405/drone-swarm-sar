@@ -10,30 +10,32 @@ Tabs:
   • Figures - gallery of generated publication figures.
 """
 from __future__ import annotations
-import json
+
 import subprocess
 from pathlib import Path
+
+import matplotlib
 import numpy as np
 import pandas as pd
 import streamlit as st
-import matplotlib
+
 matplotlib.use("Agg")
+import sys
+
 import matplotlib.pyplot as plt
 
-import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "src"))
 
 from swarm_sar.config import EnvConfig, WorldConfig
-from swarm_sar.environment.sar_env import SARSwarmEnv
-from swarm_sar.training.rollout import run_episode, HeuristicActor, load_neural_actor
-from swarm_sar.evaluation.metrics import episode_metrics, aggregate
-from swarm_sar.visualization.style import DRONE_COLORS, CELL_CMAP
 from swarm_sar.drone.drone import ACTIONS
+from swarm_sar.environment.sar_env import SARSwarmEnv
+from swarm_sar.evaluation.metrics import aggregate, episode_metrics
+from swarm_sar.training.rollout import EpisodeLog, HeuristicActor, load_neural_actor
+from swarm_sar.visualization.style import CELL_CMAP, DRONE_COLORS
 
 ROOT = Path(__file__).resolve().parents[3]
 st.set_page_config(page_title="Swarm-SAR Dashboard", layout="wide", page_icon="🚁")
 
-from swarm_sar.training.rollout import EpisodeLog
 
 def _run_async(seed, drones, steps, size, strategy, comm_range, packet_loss, checkpoint=None):
     """Generator that yields the live simulation state frame by frame."""
@@ -45,19 +47,19 @@ def _run_async(seed, drones, steps, size, strategy, comm_range, packet_loss, che
         actor = load_neural_actor(checkpoint, deterministic=True)
     else:
         actor = HeuristicActor(env, strategy, seed)
-    
+
     obs, _ = env.reset(seed=seed)
     if hasattr(actor, "bind_env"):
         actor.bind_env(env)
-        
+
     log = EpisodeLog(world_grid=env.world.grid.copy())
     total = 0.0
-    
+
     while env.agents:
         actions = actor(obs)
         obs, rewards, term, trunc, _ = env.step(actions)
         total += float(sum(rewards.values()))
-        
+
         # update intermediate state
         log.frames = env.history
         log.victims = [{"idx": v.idx, "pos": v.pos.tolist(), "detected": v.detected,
@@ -65,12 +67,12 @@ def _run_async(seed, drones, steps, size, strategy, comm_range, packet_loss, che
                         "rescued_step": v.rescued_step, "severity": v.severity}
                        for v in env.world.victims]
         yield log, None
-        
+
     log.collisions = env.collisions
     log.summary = env.episode_summary()
     log.total_reward = total
     log.charging = [c.pos.tolist() for c in env.world.charging]
-    
+
     yield log, episode_metrics(log, grid_size=size)
 
 @st.cache_data(show_spinner=False)
@@ -78,8 +80,8 @@ def _run_cached(*args, **kwargs):
     # Consume the generator to return final state for caching
     gen = _run_async(*args, **kwargs)
     log, mets = None, None
-    for l, m in gen:
-        log, mets = l, m
+    for frame_log, frame_mets in gen:
+        log, mets = frame_log, frame_mets
     return log, mets
 
 def _draw_frame(log, k, size):
@@ -119,8 +121,10 @@ def main():
         seed = st.number_input("Seed", 0, 9999, 7)
         comm_range = st.slider("Comm range (m)", 0.0, 60.0, 30.0, 5.0)
         packet_loss = st.slider("Packet loss", 0.0, 1.0, 0.08, 0.02)
-        
-        checkpoints = ["None"] + [str(p) for p in (ROOT / "results").glob("**/final.pt")]
+
+        checkpoints = ["None"] + sorted(
+            {str(p) for pat in ("**/final.pt", "**/best.pt")
+             for p in (ROOT / "results").glob(pat)})
         checkpoint = st.selectbox("Neural Policy", checkpoints, format_func=lambda x: "None" if x == "None" else Path(x).parent.parent.name)
 
         run = st.button("▶ Run episode", type="primary")
@@ -157,24 +161,24 @@ def main():
                                 ax1.axhline(25, ls="--", c="r"); ax1.set_title("Battery (%)"); ax1.set_ylim(0, 105)
                                 st.pyplot(fig1)
                                 plt.close(fig1)
-                                
+
                                 fig2, ax2 = plt.subplots(figsize=(5, 2.6))
                                 ax2.plot([f["coverage"] * 100 for f in tmp_log.frames], c="#2ca02c", label="coverage")
                                 ax2.plot([f["rescued"] for f in tmp_log.frames], c="#1f77b4", label="rescued")
                                 ax2.legend(); ax2.set_title("Progress")
                                 st.pyplot(fig2)
                                 plt.close(fig2)
-                
+
                 st.session_state["log"] = tmp_log
                 st.session_state["mets"] = tmp_mets
                 st.session_state["size"] = size
                 content_container.empty()
-                
+
         elif "log" not in st.session_state:
             with st.spinner("Loading initial..."):
                 log, mets = _run_cached(int(seed), drones, steps, size, strategy, comm_range, packet_loss, checkpoint)
                 st.session_state["log"] = log; st.session_state["mets"] = mets; st.session_state["size"] = size
-                
+
         if "log" in st.session_state:
             log = st.session_state["log"]; mets = st.session_state["mets"]; size = st.session_state["size"]
             c = st.columns(6)
@@ -198,7 +202,7 @@ def main():
                 ax2.plot([f["coverage"] * 100 for f in log.frames], c="#2ca02c", label="coverage")
                 ax2.plot([f["rescued"] for f in log.frames], c="#1f77b4", label="rescued")
                 ax2.legend(); ax2.set_title("Progress"); st.pyplot(fig2)
-                
+
                 # Action histogram
                 st.subheader("Action Histogram")
                 acts = [ACTIONS[a] for f in log.frames for a in f["actions"]]
@@ -211,7 +215,7 @@ def main():
             st.subheader("Victim Tracking")
             v_df = pd.DataFrame(log.victims)
             st.dataframe(v_df, use_container_width=True)
-            
+
             st.subheader("Fault Timeline")
             faults = []
             for f in log.frames:
@@ -222,11 +226,11 @@ def main():
                 st.dataframe(pd.DataFrame(faults), use_container_width=True)
             else:
                 st.info("No faults injected/detected.")
-                
+
             st.subheader("Communication Events")
             comms = [{"step": f["t"], "edges": len(f["comm_edges"])} for f in log.frames if f["comm_edges"]]
             st.dataframe(pd.DataFrame(comms), use_container_width=True)
-            
+
             st.subheader("Explainability Traces (last frame)")
             st.info("Traces for the last timestep's decision process.")
             last_f = log.frames[-1]
@@ -249,7 +253,8 @@ def main():
         if st.button("Evaluate"):
             rows = []
             for s in seeds:
-                _, m = _run(s, drones, steps, size, strategy, comm_range, packet_loss, checkpoint)
+                _, m = _run_cached(int(s), drones, steps, size, strategy,
+                                   comm_range, packet_loss, checkpoint)
                 rows.append(m)
             agg = aggregate(rows)
             table = pd.DataFrame({k: [f"{v['mean']:.3f} ± {v['std']:.3f}"] for k, v in agg.items()}).T

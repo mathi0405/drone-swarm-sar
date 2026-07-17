@@ -1,7 +1,7 @@
 import numpy as np
+
 from swarm_sar.config import WorldConfig
 from swarm_sar.environment.world import SARWorld
-from swarm_sar.environment.entities import CellType
 
 
 def test_world_generates_entities():

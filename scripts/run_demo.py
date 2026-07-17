@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """Run a self-contained heuristic SAR episode and (optionally) export quick figures."""
 from __future__ import annotations
-import argparse, json
+
+import argparse
+import json
 from pathlib import Path
+
 import _bootstrap  # noqa: F401
-import numpy as np
 
 from swarm_sar.config import EnvConfig, WorldConfig
 from swarm_sar.environment.sar_env import SARSwarmEnv
-from swarm_sar.training.rollout import run_episode, HeuristicActor
-from swarm_sar.evaluation.metrics import episode_metrics, aggregate
+from swarm_sar.evaluation.metrics import aggregate, episode_metrics
+from swarm_sar.training.rollout import HeuristicActor, run_episode
 
 
 def main():
