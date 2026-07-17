@@ -84,3 +84,31 @@ def test_merge_handles_multiple_env_groups():
 
     assert merged.obs == ["a0t0", "a1t0", "a0t1", "a1t1",
                           "e1_a0t0", "e1_a1t0", "e1_a0t1", "e1_a1t1"]
+
+
+def test_curriculum_stages_never_exceed_base_difficulty():
+    # Regression: with an easy base (mappo_easy-style), the raw stage ladder
+    # put a 64-cell map at stage 3 and 6 victims + faults at stage 4 — harder
+    # than the final benchmark. Every stage must be <= base on every axis and
+    # the ladder must be monotone non-decreasing.
+    from swarm_sar.config import EnvConfig, WorldConfig
+    from swarm_sar.training.mappo import stage_env_cfg
+
+    base = EnvConfig(num_drones=3, max_steps=150,
+                     world=WorldConfig(size=40, n_victims=4, n_buildings=6,
+                                       n_no_fly_zones=1, n_dynamic_obstacles=2))
+    base.faults.enable = False
+    stages = [stage_env_cfg(base, s) for s in range(5)]
+
+    for cfg in stages:
+        assert cfg.world.size <= base.world.size
+        assert cfg.world.n_victims <= base.world.n_victims
+        assert cfg.world.n_dynamic_obstacles <= base.world.n_dynamic_obstacles
+        assert cfg.comm.packet_loss <= base.comm.packet_loss
+        assert not cfg.faults.enable            # base has faults off
+    for a, b in zip(stages[:-1], stages[1:]):
+        assert a.world.size <= b.world.size
+        assert a.world.n_victims <= b.world.n_victims
+    # final stage is exactly the benchmark
+    assert stages[4].world.size == base.world.size
+    assert stages[4].world.n_victims == base.world.n_victims

@@ -96,6 +96,75 @@ def _gae(rewards, values, dones, gamma, lam, bootstrap=0.0):
     return adv, ret
 
 
+def stage_env_cfg(base, stage: int):
+    """Environment config for curriculum stage 0..4 (4 = full benchmark).
+
+    Every parameter is CLAMPED to the base config so no intermediate stage is
+    ever harder than the final benchmark — with a small/easy base (e.g.
+    ``mappo_easy.yaml``: size 40, 4 victims, faults off) the raw stage ladder
+    would otherwise put a 64-cell map at stage 3 and 6 victims + faults at
+    stage 4, making the "curriculum" non-monotonic.
+    """
+    cfg = copy.deepcopy(base)
+    if stage <= 0:                       # Easy
+        cfg.world.size = 32
+        cfg.world.n_victims = 1
+        cfg.world.n_buildings = 4
+        cfg.world.n_trees = 10
+        cfg.world.n_dynamic_obstacles = 0
+        cfg.world.n_no_fly_zones = 0
+        cfg.faults.enable = False
+        cfg.comm.packet_loss = 0.0
+        cfg.dwell_steps_to_rescue = 1
+        cfg.world.weather_enabled = False
+    elif stage == 1:                     # Medium-Easy
+        cfg.world.size = 48
+        cfg.world.n_victims = 2
+        cfg.world.n_buildings = 8
+        cfg.world.n_trees = 20
+        cfg.world.n_dynamic_obstacles = 0
+        cfg.world.n_no_fly_zones = 0
+        cfg.faults.enable = False
+        cfg.comm.packet_loss = base.comm.packet_loss * 0.25
+        cfg.dwell_steps_to_rescue = 1
+        cfg.world.weather_enabled = False
+    elif stage == 2:                     # Medium
+        cfg.world.size = 64
+        cfg.world.n_victims = 4
+        cfg.world.n_buildings = 14
+        cfg.world.n_trees = 30
+        cfg.world.n_dynamic_obstacles = 2
+        cfg.world.n_no_fly_zones = 1
+        cfg.faults.enable = False
+        cfg.comm.packet_loss = base.comm.packet_loss * 0.5
+        cfg.dwell_steps_to_rescue = max(1, min(base.dwell_steps_to_rescue, 2))
+    elif stage == 3:                     # Medium-Hard
+        cfg.world.n_victims = 6
+        cfg.world.n_dynamic_obstacles = max(2, base.world.n_dynamic_obstacles // 2)
+        cfg.world.n_no_fly_zones = max(1, base.world.n_no_fly_zones // 2)
+        cfg.faults.enable = True
+        cfg.comm.packet_loss = base.comm.packet_loss * 0.75
+        cfg.dwell_steps_to_rescue = base.dwell_steps_to_rescue
+    # stage >= 4: full benchmark = base settings
+
+    if stage < 4:
+        # Clamp: an intermediate stage may never exceed the benchmark.
+        w, bw = cfg.world, base.world
+        w.size = min(w.size, bw.size)
+        w.n_victims = min(w.n_victims, bw.n_victims)
+        w.n_buildings = min(w.n_buildings, bw.n_buildings)
+        w.n_trees = min(w.n_trees, bw.n_trees)
+        w.n_rubble = min(w.n_rubble, bw.n_rubble)
+        w.n_dynamic_obstacles = min(w.n_dynamic_obstacles, bw.n_dynamic_obstacles)
+        w.n_no_fly_zones = min(w.n_no_fly_zones, bw.n_no_fly_zones)
+        w.weather_enabled = w.weather_enabled and bw.weather_enabled
+        cfg.faults.enable = cfg.faults.enable and base.faults.enable
+        cfg.comm.packet_loss = min(cfg.comm.packet_loss, base.comm.packet_loss)
+        cfg.dwell_steps_to_rescue = min(cfg.dwell_steps_to_rescue,
+                                        base.dwell_steps_to_rescue)
+    return cfg
+
+
 def merged_advantages_returns(bufs: List[RolloutBuffer], gamma: float, lam: float,
                               group_size: int = 1):
     """Per-buffer GAE, interleaved in the same time-major order as
@@ -598,51 +667,7 @@ class MAPPOTrainer:
     N_CURRICULUM_STAGES = 5
 
     def _stage_env_cfg(self, stage: int):
-        """Environment config for curriculum stage 0..4 (4 = full benchmark)."""
-        base = self._base_env_cfg
-        cfg = copy.deepcopy(base)
-        if stage <= 0:                       # Easy
-            cfg.world.size = 32
-            cfg.world.n_victims = 1
-            cfg.world.n_buildings = 4
-            cfg.world.n_trees = 10
-            cfg.world.n_dynamic_obstacles = 0
-            cfg.world.n_no_fly_zones = 0
-            cfg.faults.enable = False
-            cfg.comm.packet_loss = 0.0
-            cfg.dwell_steps_to_rescue = 1
-            cfg.world.weather_enabled = False
-        elif stage == 1:                     # Medium-Easy
-            cfg.world.size = 48
-            cfg.world.n_victims = 2
-            cfg.world.n_buildings = 8
-            cfg.world.n_trees = 20
-            cfg.world.n_dynamic_obstacles = 0
-            cfg.world.n_no_fly_zones = 0
-            cfg.faults.enable = False
-            cfg.comm.packet_loss = base.comm.packet_loss * 0.25
-            cfg.dwell_steps_to_rescue = 1
-            cfg.world.weather_enabled = False
-        elif stage == 2:                     # Medium
-            cfg.world.size = 64
-            cfg.world.n_victims = 4
-            cfg.world.n_buildings = 14
-            cfg.world.n_trees = 30
-            cfg.world.n_dynamic_obstacles = 2
-            cfg.world.n_no_fly_zones = 1
-            cfg.faults.enable = False
-            cfg.comm.packet_loss = base.comm.packet_loss * 0.5
-            cfg.dwell_steps_to_rescue = max(1, min(base.dwell_steps_to_rescue, 2))
-        elif stage == 3:                     # Medium-Hard
-            cfg.world.size = base.world.size
-            cfg.world.n_victims = 6
-            cfg.world.n_dynamic_obstacles = max(2, base.world.n_dynamic_obstacles // 2)
-            cfg.world.n_no_fly_zones = max(1, base.world.n_no_fly_zones // 2)
-            cfg.faults.enable = True
-            cfg.comm.packet_loss = base.comm.packet_loss * 0.75
-            cfg.dwell_steps_to_rescue = base.dwell_steps_to_rescue
-        # stage >= 4: full benchmark = base settings
-        return cfg
+        return stage_env_cfg(self._base_env_cfg, stage)
 
     @staticmethod
     def _linear_stage(iteration: int, total_iters: int) -> int:
