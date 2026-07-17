@@ -38,6 +38,7 @@ def test_sparse_reward_removes_shaping():
         cfg = EnvConfig(num_drones=1, max_steps=10)
         cfg.reward.mode = mode
         cfg.faults.enable = False
+        cfg.comm.auto_broadcast = False   # isolate shaping from comm rewards
         env = SARSwarmEnv(cfg, seed=0)
         env.reset(seed=0)
         tot = 0.0

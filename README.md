@@ -65,6 +65,8 @@ Following an in-depth review (see [`docs/RESEARCH_ROADMAP.md`](docs/RESEARCH_ROA
 - **Learned bandwidth-constrained communication** masked by the *physical* channel (range **and** per-edge packet loss) + a graceful-degradation curve vs packet loss.
 - **Vectorized exact-LOS sensing** — per-radius precomputed Bresenham ray tables turn the sensing sweep into NumPy fancy indexing (~1.7× faster env steps despite a much richer observation).
 - **Hyperparameter search** — `scripts/tune_hparams.py` (Optuna TPE) emits a study report and a ready-to-train best-config YAML (`pip install -e ".[tune]"`).
+- **Audited, bounded reward** — every dense term normalized to O(weight) per step with a documented before/after audit ([`docs/reward_design.md`](docs/reward_design.md)); **triage-style time-critical rescue** (severity × time-decay) turns rescue ordering into a real scheduling problem.
+- **Performance-gated curriculum** — stages advance when the policy *masters* its current stage (deterministic per-stage eval vs. rescue-rate thresholds), with the linear schedule as a fallback floor; every transition is logged.
 - **SIS validated** — ranking stable under weight perturbation (ρ=0.96), Pareto analysis, geometric-mean justification.
 - **Sharper detection** — false positives + confirmation; principled path-efficiency & documented safety scaling.
 
@@ -135,7 +137,7 @@ Full details in [`docs/architecture.md`](docs/architecture.md). Other docs: [ins
 
 - **Observation (per drone, partial/decentralized):** an 8-frame temporal stack of — own pose (noisy GPS), velocity, altitude and battery; a victim-belief summary (count, density, two nearest believed victims); locally sensed fire/smoke distances and densities (within camera radius only); an egocentric 7×7 map patch (occupancy · own explored mask · own victim belief); an 8-ray LiDAR scan; the k-nearest in-range peers with their intent (relative position, rescue target, mode); and a comm-link summary (messages received, age, signal strength, loss rate).
 - **Actions (10 discrete, 7 enabled by default):** hover, N/S/E/W move, broadcast, return-to-base; ascend/descend/rotate exist but are masked out by default because altitude/yaw only affect energy in the 2.5-D simulation.
-- **Reward:** `+` new/frontier/team-new cells, victim detected/classified/rescued, mission complete, novel broadcasts, safe separation; `−` collision, near-miss, hazard, battery depletion, duplicate exploration, hover/idle, excessive comms, per-step time pressure. Sparse mode keeps only mission/safety events for reward ablations.
+- **Reward (see [`docs/reward_design.md`](docs/reward_design.md)):** every dense term is footprint-normalized and bounded per step, so mission events dominate by construction; rescues are **time-critical** — scaled by victim severity and decaying over the episode (triage). `+` new/frontier/team-new cells, victim detected/classified/rescued(×urgency), mission complete, novel broadcasts, safe separation; `−` collision, near-miss, hazard, battery depletion, duplicate exploration, hover/idle, excessive comms, time pressure. Sparse mode keeps only mission/safety events for reward ablations.
 
 ## Reproducibility
 

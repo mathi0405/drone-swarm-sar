@@ -21,13 +21,12 @@ def worker(remote, parent_remote, cfg: EnvConfig, seed: int):
         def apply_cfg(new_cfg):
             # Swapping configs mid-episode would leave the running episode with
             # a mismatched world/reward state, so this only runs right before a
-            # reset (see 'step' auto-reset and 'reset' below).
+            # reset (see 'step' auto-reset and 'reset' below). reset() rebuilds
+            # comm/faults/world/allocator from env.cfg, so only the config and
+            # the objects created in __init__ need touching here.
             env.cfg = new_cfg
-            env.comm.cfg = env.cfg.comm
-            env.faults.cfg = env.cfg.faults
-            env.world.cfg = env.cfg.world
-            env.reward_engine = env.reward_engine.__class__(env.cfg.reward)
-            env.obs_engine.cfg = env.cfg
+            env.reward_engine = env.reward_engine.__class__(new_cfg.reward)
+            env.obs_engine.cfg = new_cfg
             env._built = False                 # force world regeneration on reset
 
         while True:

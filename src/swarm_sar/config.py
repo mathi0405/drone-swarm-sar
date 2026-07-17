@@ -92,10 +92,13 @@ class FaultConfig(BaseModel):
     motor_degradation_factor: float = 0.6
 
 class RewardConfig(BaseModel):
-    # Penalties are expressed as negative weights and applied additively.
-    explore_new_cell: float = 0.1
-    frontier_cell: float = 0.2
-    coverage_new_cell: float = 0.1
+    # Penalties are negative weights, applied additively.  Cell-based terms
+    # (explore/coverage/duplicate) are normalized by the sensor footprint in
+    # RewardEngine, so each weight below is the MAXIMUM per-drone per-step
+    # contribution of that term — see docs/reward_design.md.
+    explore_new_cell: float = 1.0
+    frontier_cell: float = 0.05
+    coverage_new_cell: float = 0.5
     victim_detected: float = 2.0
     victim_classified: float = 1.0
     victim_rescued: float = 10.0
@@ -113,6 +116,10 @@ class RewardConfig(BaseModel):
     battery_depleted: float = -100.0
     excessive_comm: float = -0.3
     time_penalty: float = -0.02
+    # Triage: scale the rescue reward by victim severity and decay it over the
+    # episode, so fast, severity-ordered rescues out-earn eventual ones.
+    time_critical_rescue: bool = True
+    rescue_urgency_floor: float = 0.3
     mode: str = "shaped"
 
 class EnvConfig(BaseModel):
@@ -190,6 +197,13 @@ class TrainConfig(BaseModel):
     bc_epochs: int = 2
     imitation_coef: float = 0.0
     curriculum: bool = True
+    # "performance": advance a stage once the policy clears the rescue-rate
+    # threshold for its CURRENT stage (linear schedule remains as a fallback
+    # floor so training always reaches full difficulty within budget).
+    # "linear": fixed 20%-of-training per stage.
+    curriculum_mode: str = "performance"
+    curriculum_rescue_thresholds: List[float] = Field(
+        default_factory=lambda: [0.9, 0.8, 0.7, 0.6])
     collapse_action_threshold: float = 0.8
 
 class TaskAllocConfig(BaseModel):

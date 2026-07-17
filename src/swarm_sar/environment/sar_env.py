@@ -337,8 +337,12 @@ class SARSwarmEnv:
         self.comm.step(self.t)
 
         # 3) sensing / exploration / detection rewards
+        sense_rad = max(1, int(self.cfg.sensors.camera_range_m * self.visibility
+                               / self.world.cfg.cell_size_m))
+        footprint = len(disk_visibility_offsets(sense_rad)[0])
         for i, a in enumerate(self.agents):
             new_cells, new_team_cells, dup, frontiers = self._sense_one(i)
+            self.reward_inputs[a].sensor_footprint = footprint
             if shaped:
                 self.reward_inputs[a].exploration_cells += new_cells
                 self.reward_inputs[a].team_new_cells += new_team_cells
@@ -409,10 +413,13 @@ class SARSwarmEnv:
             inputs = self.reward_inputs[a]
             rewards[a] = self.reward_engine.compute(inputs)
             
-            # Track components for debugging
+            # Track components for debugging (mirrors RewardEngine normalization)
             if shaped:
-                self.total_explore += r.explore_new_cell * inputs.exploration_cells + r.frontier_cell * inputs.frontier_cells + r.coverage_new_cell * inputs.team_new_cells
-                self.total_overlap += r.duplicate_explore * inputs.overlap_cells
+                foot = max(1, inputs.sensor_footprint)
+                self.total_explore += (r.explore_new_cell * inputs.exploration_cells / foot
+                                       + r.frontier_cell * inputs.frontier_cells
+                                       + r.coverage_new_cell * inputs.team_new_cells / foot)
+                self.total_overlap += r.duplicate_explore * inputs.overlap_cells / foot
                 if inputs.idle:
                     self.total_idle += r.idle
                 self.total_progress += r.approach_victim * float(np.clip(inputs.progress_dist, -1.0, 1.0))
@@ -578,6 +585,15 @@ class SARSwarmEnv:
                     v.rescued_by = max(v._dwell_by, key=v._dwell_by.get)
                     v.rescued_step = self.t
                     res += 1
+                    # Triage urgency: severe victims rescued early pay full
+                    # value; late or low-severity rescues pay less (never
+                    # below the configured floor).
+                    floor = self.cfg.reward.rescue_urgency_floor
+                    decay = max(0.0, 1.0 - self.t / max(1, self.cfg.max_steps))
+                    self.reward_inputs[f"drone_{i}"].rescue_urgency = (
+                        (floor + (1.0 - floor) * decay)
+                        * (0.5 + 0.5 * float(v.severity))
+                    )
             elif v.detected and not v.rescued:
                 # Reset per-drone dwell if this drone moved away (continuous presence required)
                 if hasattr(v, '_dwell_by') and i in v._dwell_by:

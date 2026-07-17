@@ -35,6 +35,10 @@ from swarm_sar.policies.base import HAS_TORCH, build_policy, PolicySpec
 if HAS_TORCH:
     import torch
     import torch.nn as nn
+else:
+    class _DummyTorch:
+        def no_grad(self): return lambda f: f
+    torch = _DummyTorch()
 
 
 @dataclass
@@ -134,6 +138,10 @@ class MAPPOTrainer:
         # Samples the per-edge packet-loss mask applied to the learned comm
         # channel (kept separate from env rngs so it never perturbs the sim).
         self._np_rng = np.random.default_rng(cfg.train.seed + 977)
+        # Curriculum state: current stage and the highest stage unlocked by
+        # performance gating (see _apply_curriculum / _update_curriculum_gate).
+        self._cur_stage = -1
+        self._perf_stage = 0
         
         # Local dummy env for metadata
         self.env = SARSwarmEnv(copy.deepcopy(cfg.env), seed=cfg.train.seed)
@@ -587,15 +595,13 @@ class MAPPOTrainer:
 
         return {"bc_loss": loss_val}
 
-    def _apply_curriculum(self, iteration: int, total_iters: int) -> None:
-        if not self.cfg.train.curriculum:
-            return
-        progress = iteration / max(1, total_iters - 1)
+    N_CURRICULUM_STAGES = 5
+
+    def _stage_env_cfg(self, stage: int):
+        """Environment config for curriculum stage 0..4 (4 = full benchmark)."""
         base = self._base_env_cfg
         cfg = copy.deepcopy(base)
-        
-        # Stage 1: Easy (0.0 to 0.2)
-        if progress < 0.2:
+        if stage <= 0:                       # Easy
             cfg.world.size = 32
             cfg.world.n_victims = 1
             cfg.world.n_buildings = 4
@@ -606,8 +612,7 @@ class MAPPOTrainer:
             cfg.comm.packet_loss = 0.0
             cfg.dwell_steps_to_rescue = 1
             cfg.world.weather_enabled = False
-        # Stage 2: Medium-Easy (0.2 to 0.4)
-        elif progress < 0.4:
+        elif stage == 1:                     # Medium-Easy
             cfg.world.size = 48
             cfg.world.n_victims = 2
             cfg.world.n_buildings = 8
@@ -618,8 +623,7 @@ class MAPPOTrainer:
             cfg.comm.packet_loss = base.comm.packet_loss * 0.25
             cfg.dwell_steps_to_rescue = 1
             cfg.world.weather_enabled = False
-        # Stage 3: Medium (0.4 to 0.6)
-        elif progress < 0.6:
+        elif stage == 2:                     # Medium
             cfg.world.size = 64
             cfg.world.n_victims = 4
             cfg.world.n_buildings = 14
@@ -629,8 +633,7 @@ class MAPPOTrainer:
             cfg.faults.enable = False
             cfg.comm.packet_loss = base.comm.packet_loss * 0.5
             cfg.dwell_steps_to_rescue = max(1, min(base.dwell_steps_to_rescue, 2))
-        # Stage 4: Medium-Hard (0.6 to 0.8)
-        elif progress < 0.8:
+        elif stage == 3:                     # Medium-Hard
             cfg.world.size = base.world.size
             cfg.world.n_victims = 6
             cfg.world.n_dynamic_obstacles = max(2, base.world.n_dynamic_obstacles // 2)
@@ -638,16 +641,67 @@ class MAPPOTrainer:
             cfg.faults.enable = True
             cfg.comm.packet_loss = base.comm.packet_loss * 0.75
             cfg.dwell_steps_to_rescue = base.dwell_steps_to_rescue
-        # Stage 5: Full Benchmark (0.8 to 1.0) -> Uses base settings completely
+        # stage >= 4: full benchmark = base settings
+        return cfg
 
+    @staticmethod
+    def _linear_stage(iteration: int, total_iters: int) -> int:
+        progress = iteration / max(1, total_iters - 1)
+        return min(4, int(progress / 0.2))
+
+    def _apply_curriculum(self, iteration: int, total_iters: int) -> None:
+        """Move to the target curriculum stage (never backwards).
+
+        ``curriculum_mode="performance"`` advances a stage as soon as the
+        policy masters it (deterministic eval on the *current stage* clears the
+        configured rescue threshold), with the linear schedule as a fallback
+        floor so a stalled run still reaches full difficulty within budget.
+        ``"linear"`` reproduces the fixed 20%-per-stage schedule.
+        """
+        if not self.cfg.train.curriculum:
+            return
+        target = self._linear_stage(iteration, total_iters)
+        if self.cfg.train.curriculum_mode == "performance":
+            target = max(target, self._perf_stage)
+        if target == self._cur_stage:
+            return
+        self._cur_stage = target
+        cfg = self._stage_env_cfg(target)
+        print(f"  [curriculum] entering stage {target + 1}/{self.N_CURRICULUM_STAGES} "
+              f"(size {cfg.world.size}, victims {cfg.world.n_victims}, "
+              f"faults {'on' if cfg.faults.enable else 'off'}, "
+              f"loss {cfg.comm.packet_loss:.2f})")
         self.cfg.env = cfg
         if self.vec_env:
             self.vec_env.set_cfg([copy.deepcopy(cfg) for _ in range(self.num_envs)])
 
+    def _update_curriculum_gate(self) -> dict:
+        """Evaluate on the CURRENT stage and unlock the next one if mastered."""
+        thresholds = self.cfg.train.curriculum_rescue_thresholds
+        if (self.cfg.train.curriculum_mode != "performance"
+                or self._cur_stage >= self.N_CURRICULUM_STAGES - 1
+                or self._cur_stage >= len(thresholds)):
+            return {}
+        stage_stats = self.evaluate_policy(
+            episodes=2, seed=20_000 + self._cur_stage,
+            env_cfg=self._stage_env_cfg(self._cur_stage))
+        rescue = stage_stats["eval_rescue_rate"]
+        threshold = thresholds[self._cur_stage]
+        if rescue >= threshold and self._perf_stage <= self._cur_stage:
+            self._perf_stage = self._cur_stage + 1
+            print(f"  [curriculum] stage {self._cur_stage + 1} mastered "
+                  f"(rescue {rescue:.2f} >= {threshold:.2f}) — unlocking next stage")
+        return {"stage_eval_rescue_rate": rescue}
+
     @torch.no_grad()
-    def evaluate_policy(self, episodes: int = 3, seed: int = 10_000) -> dict:
-        """Deterministic evaluation on the *base* (non-curriculum) environment."""
-        env = SARSwarmEnv(copy.deepcopy(self._base_env_cfg), seed=seed)
+    def evaluate_policy(self, episodes: int = 3, seed: int = 10_000,
+                        env_cfg=None) -> dict:
+        """Deterministic evaluation; defaults to the base (benchmark) env.
+
+        Pass ``env_cfg`` to evaluate on a specific configuration (used by the
+        performance-gated curriculum to test mastery of the current stage).
+        """
+        env = SARSwarmEnv(copy.deepcopy(env_cfg or self._base_env_cfg), seed=seed)
         frame_dim = env._compute_obs_dim()
         eval_rng = np.random.default_rng(seed)          # deterministic channel loss
         returns, rescue_rates, coverages = [], [], []
@@ -744,6 +798,9 @@ class MAPPOTrainer:
                 if key > best_key:
                     best_key = key
                     self.save(checkpoint_dir / "best.pt")
+                # Curriculum gate: test mastery of the CURRENT stage.
+                stats.update(self._update_curriculum_gate())
+            stats["curriculum_stage"] = float(self._cur_stage)
 
             if logger is not None:
                 logger.log_scalars(stats, step=it * rollout_env_steps)
