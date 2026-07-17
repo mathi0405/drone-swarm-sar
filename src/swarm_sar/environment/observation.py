@@ -22,7 +22,9 @@ class ObservationEngine:
 
     def get_obs(self, env):
         # Per-drone frame layout (see SARSwarmEnv._compute_obs_dim):
-        #   own state (7) + victim info (9) + hazards (4) + peers (6 * k) + comms (4)
+        #   own state (7) + victim info (9) + hazards (4)
+        #   + egocentric map patch (3 x P x P) + LiDAR (8)
+        #   + peers (6 * k) + comms (4)
         k = env.cfg.k_nearest_drones
         S = env.world.size
 
@@ -110,6 +112,35 @@ class ObservationEngine:
                 smoke_dist = float(np.clip(dd.min() / rad, 0.0, 1.0))
             hazards = [fire_dist, smoke_dist, fire_density, smoke_density]
 
+            # Egocentric map patch: a P x P grid of sample points spanning the
+            # camera footprint, three channels — occupancy (blocked cells; the
+            # world outside the map reads as blocked), the drone's OWN explored
+            # mask, and its OWN victim belief.  This is what lets the policy
+            # see where it has not searched yet; without it, exploration
+            # rewards are unlearnable from the observation.
+            P = env.cfg.obs_map_patch
+            map_rad = env.cfg.sensors.camera_range_m / env.world.cfg.cell_size_m
+            steps_1d = np.round(np.linspace(-map_rad, map_rad, P)).astype(int)
+            gy_raw = cy + steps_1d[:, None]          # (P, 1)
+            gx_raw = cx + steps_1d[None, :]          # (1, P)
+            in_map = ((gy_raw >= 0) & (gy_raw < S)) & ((gx_raw >= 0) & (gx_raw < S))
+            gy = np.clip(gy_raw, 0, S - 1)
+            gx = np.clip(gx_raw, 0, S - 1)
+            occupancy = np.where(in_map, env._blocked_mask[gy, gx], True)
+            explored_patch = np.where(in_map, env.explored[i][gy, gx], False)
+            belief_patch = np.where(in_map, env.victim_belief[i][gy, gx], 0.0)
+            map_patch = np.concatenate([
+                occupancy.astype(np.float32).ravel(),
+                explored_patch.astype(np.float32).ravel(),
+                belief_patch.astype(np.float32).ravel(),
+            ])
+
+            # LiDAR: normalized ranges to the nearest occluder in 8 directions.
+            lidar_cells = max(1, int(env.cfg.sensors.lidar_range_m
+                                     / env.world.cfg.cell_size_m))
+            lidar = (d.sensors.lidar.scan(s.pos, env.world, env._blocked_mask)
+                     / lidar_cells).astype(np.float32)
+
             # Team info (peers within comm range, nearest first)
             crange = env.cfg.comm.range_m
             others = sorted([j for j in range(env.n)
@@ -159,6 +190,8 @@ class ObservationEngine:
                 np.asarray(own_state, np.float32),
                 np.asarray(victim_info, np.float32),
                 np.asarray(hazards, np.float32),
+                map_patch,
+                lidar,
                 np.asarray(peers, np.float32),
                 np.asarray(comms, np.float32)
             ])

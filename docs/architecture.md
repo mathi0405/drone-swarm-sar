@@ -17,15 +17,21 @@ obs, info                      = env.reset(seed=0)          # dict keyed by agen
 obs, rewards, term, trunc, info = env.step({agent: action}) # parallel step
 ```
 
-- **Observation** (per drone, `env.obs_dim` floats): own pose/vel/yaw, altitude,
-  battery, k-nearest visible drones (rel-pos + SoC + alive), LiDAR (8 rays), local
-  occupancy patch, local victim-probability patch, received-message summary, and
-  global progress (fraction found / explored).
-- **Action** (discrete, 10): `hover, north, south, east, west, ascend, descend,
-  rotate, broadcast, return_to_base`.
-- **Reward** (shaped): `+ explore_new_cell, victim_detected, victim_rescued,
-  efficient_comm, mission_complete`; `− collision, battery_depleted,
-  duplicate_explore, idle, excessive_comm, time`.
+- **Observation** (per drone, `env.obs_dim` floats — an 8-frame temporal stack):
+  own noisy-GPS pose, velocity, altitude, battery; a victim-belief summary
+  (count, density, two nearest believed victims); locally sensed fire/smoke
+  distance and density; an egocentric `obs_map_patch`² map patch with three
+  channels (occupancy, own explored mask, own victim belief); LiDAR (8 rays);
+  the k-nearest in-range peers with intent (rel-pos, rescue target, mode); and
+  a received-message summary (count, age, signal strength, loss rate).
+- **Action** (discrete, 10; 7 enabled by default): `hover, north, south, east,
+  west, broadcast, return_to_base` (+ `ascend, descend, rotate`, masked out by
+  default because altitude/yaw only affect energy in the 2.5-D sim).
+- **Reward** (shaped): `+ explore/frontier/team-new cells, victim detected/
+  classified/rescued, mission_complete, useful_broadcast, separation`;
+  `− collision, near_collision, hazard, battery_depleted, duplicate_explore,
+  hover/idle, excessive_comm, time`. Sparse mode keeps only mission/safety
+  events.
 
 ## World generation
 

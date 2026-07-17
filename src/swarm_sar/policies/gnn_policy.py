@@ -70,7 +70,8 @@ class GNNEncoder(nn.Module):
         self.comm_head = None
         if getattr(cfg, "use_attention_comm", False):
             from swarm_sar.policies.comm_head import LearnedCommHead
-            self.comm_head = LearnedCommHead(hidden, bandwidth=4)
+            self.comm_head = LearnedCommHead(
+                hidden, bandwidth=getattr(cfg, "comm_bandwidth", 4))
             
         if _HAS_PYG:
             if cfg.gnn_type == "gat":
@@ -90,6 +91,7 @@ class GNNEncoder(nn.Module):
         if graph is None:
             return h
             
+        packet_keep = None
         if isinstance(graph, torch.Tensor):
             dense_adj = graph.float()
             edge_attr = None
@@ -98,13 +100,22 @@ class GNNEncoder(nn.Module):
         elif self._pyg:
             edge_idx = graph.get("edge_index")
             edge_attr = graph.get("edge_attr")
+            packet_keep = graph.get("keep")
             dense_adj = self._dense_adjacency(edge_idx, h.shape[0], h.device)
         else:
             dense_adj = graph.get("adj")
             edge_attr = graph.get("attr")
-            
+            packet_keep = graph.get("keep")
+
         if self.comm_head is not None and dense_adj is not None:
-            h = h + self.comm_head(h, dense_adj)
+            # The learned channel is masked by the same physical constraints as
+            # the message bus: range (adjacency) AND per-edge packet loss.
+            if (packet_keep is not None and packet_keep.dim() == 3
+                    and dense_adj.dim() == 2):
+                # PyG path flattens the batch into one block-diagonal graph;
+                # mirror that layout for the keep mask.
+                packet_keep = torch.block_diag(*packet_keep.unbind(0))
+            h = h + self.comm_head(h, dense_adj, packet_keep=packet_keep)
             
         for conv, norm in zip(self.convs, self.norms):
             h_in = h

@@ -124,6 +124,9 @@ class EnvConfig(BaseModel):
     step_seconds: float = 5.0
     max_speed_mps: float = 6.0
     obs_patch: int = 11
+    # Side length of the egocentric P x P map patch in the observation
+    # (channels: occupancy, own explored mask, own victim belief).
+    obs_map_patch: int = 7
     k_nearest_drones: int = 3
     dwell_steps_to_rescue: int = 1
     confirmations_required: int = 1
@@ -152,13 +155,15 @@ class EnvConfig(BaseModel):
     motion_noise_std: float = 0.05
 
 class ModelConfig(BaseModel):
-    arch: str = "transformer_gnn"
+    arch: str = "transformer_gnn"        # mlp | gru | gnn | transformer | transformer_gnn
     hidden_dim: int = 256
     n_layers: int = 2
     n_heads: int = 4
     gnn_type: str = "gat"
     gnn_message_rounds: int = 2
     use_attention_comm: bool = True
+    # Max learned messages an agent may attend to per step (top-k gate).
+    comm_bandwidth: int = 4
 
 class TrainConfig(BaseModel):
     algo: str = "mappo"

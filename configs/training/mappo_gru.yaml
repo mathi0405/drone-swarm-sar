@@ -1,0 +1,17 @@
+# MAPPO + GRU recurrent baseline (ablation partner for the Transformer:
+# same temporal frame stack, recurrence instead of attention).
+env: { num_drones: 3, max_steps: 200 }
+model: { arch: gru, hidden_dim: 128 }
+train:
+  algo: mappo
+  policy_sharing: shared
+  centralized_critic: true
+  num_envs: 16
+  curriculum: true
+  bc_warmstart_episodes: 8
+  bc_epochs: 2
+  imitation_coef: 0.02
+  total_timesteps: 3000000
+  lr: 0.0003
+  seed: 0
+log: { experiment_name: mappo_gru, seeds: [0, 1, 2] }

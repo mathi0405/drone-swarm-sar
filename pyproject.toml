@@ -29,8 +29,9 @@ rl  = ["gymnasium>=0.29", "pettingzoo>=1.24", "torch>=2.1", "torch-geometric>=2.
 perception = ["ultralytics>=8.2"]
 viz = ["plotly>=5.18", "streamlit>=1.30", "opencv-python>=4.8", "seaborn>=0.13", "imageio-ffmpeg>=0.4"]
 sim = ["airsim>=1.8.1", "msgpack-rpc-python>=0.4.1"]
+tune = ["optuna>=3.5"]
 dev = ["pytest>=7.4", "pytest-cov>=4.1", "black>=23.9", "ruff>=0.1.6", "mypy>=1.6", "pre-commit>=3.5"]
-all = ["swarm-sar[rl,viz,sim,perception,dev]"]
+all = ["swarm-sar[rl,viz,sim,perception,tune,dev]"]
 
 [project.urls]
 Homepage = "https://github.com/drone-swarm-sar/drone-swarm-sar"

@@ -20,8 +20,10 @@ from swarm_sar.utils.geometry import bresenham
 # Integer cell values derived from the enum ONCE, so flight/vision rules can
 # never drift from CellType.blocks_flight / CellType.occludes_vision while the
 # hot-path grid checks stay plain integer comparisons.
-_BLOCKS_FLIGHT = tuple(ct.value for ct in CellType if ct.blocks_flight)
-_OCCLUDES = tuple(ct.value for ct in CellType if ct.occludes_vision)
+BLOCKS_FLIGHT_VALUES = tuple(ct.value for ct in CellType if ct.blocks_flight)
+OCCLUDES_VALUES = tuple(ct.value for ct in CellType if ct.occludes_vision)
+_BLOCKS_FLIGHT = BLOCKS_FLIGHT_VALUES
+_OCCLUDES = OCCLUDES_VALUES
 
 
 class SARWorld:

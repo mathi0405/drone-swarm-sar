@@ -105,6 +105,9 @@ def build_policy(model_cfg, spec: "PolicySpec", centralized: bool = True):
     arch = model_cfg.arch
     if arch == "mlp":
         enc = MLPEncoder(spec.obs_dim, model_cfg.hidden_dim, model_cfg.n_layers)
+    elif arch == "gru":
+        from swarm_sar.policies.gru_policy import GRUEncoder
+        enc = GRUEncoder(spec.obs_dim, model_cfg.hidden_dim, model_cfg)
     elif arch == "gnn":
         from swarm_sar.policies.gnn_policy import GNNEncoder
         enc = GNNEncoder(spec.obs_dim, model_cfg.hidden_dim, model_cfg)

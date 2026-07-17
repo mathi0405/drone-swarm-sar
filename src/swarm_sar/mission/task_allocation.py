@@ -131,10 +131,18 @@ def hungarian(cost: np.ndarray) -> List[int]:
 # --------------------------------------------------------------------------- #
 def auction(cost: np.ndarray, eps: float = 0.05, max_iter: int = 1000) -> List[int]:
     n, m = cost.shape
+    # Pad with dummy columns when bidders outnumber tasks: without them the
+    # eviction war between surplus drones never converges and every call
+    # burned the full max_iter budget (the dominant env hotspot in profiling).
+    n_dummy = max(0, n - m)
+    if n_dummy:
+        big = (float(cost.max()) if cost.size else 0.0) + 1.0
+        cost = np.concatenate([cost, np.full((n, n_dummy), big)], axis=1)
+    m_eff = cost.shape[1]
     value = -cost                      # maximize negative cost
-    prices = np.zeros(m)
+    prices = np.zeros(m_eff)
     assigned_col = -np.ones(n, dtype=int)
-    col_owner = -np.ones(m, dtype=int)
+    col_owner = -np.ones(m_eff, dtype=int)
     unassigned = list(range(n))
     it = 0
     while unassigned and it < max_iter:
@@ -144,7 +152,7 @@ def auction(cost: np.ndarray, eps: float = 0.05, max_iter: int = 1000) -> List[i
         j = int(np.argmax(net))
         best = net[j]
         net[j] = -np.inf
-        second = net.max() if m > 1 else best
+        second = net.max() if m_eff > 1 else best
         prices[j] += (best - second) + eps
         prev = col_owner[j]
         if prev != -1:
@@ -152,6 +160,7 @@ def auction(cost: np.ndarray, eps: float = 0.05, max_iter: int = 1000) -> List[i
             unassigned.append(prev)
         col_owner[j] = i
         assigned_col[i] = j
+    assigned_col[assigned_col >= m] = -1          # dummy column -> unassigned
     return assigned_col.tolist()
 
 

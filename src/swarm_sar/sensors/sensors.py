@@ -55,19 +55,29 @@ class Camera:
 
 class Lidar:
     """Ranges to nearest occluders in 8 compass directions (local occupancy)."""
+
+    _DIRS = np.array([(1, 0), (1, 1), (0, 1), (-1, 1),
+                      (-1, 0), (-1, -1), (0, -1), (1, -1)], dtype=int)
+
     def __init__(self, cfg: SensorConfig, rng: np.random.Generator):
         self.cfg = cfg; self.rng = rng
 
-    def scan(self, drone_pos, world) -> np.ndarray:
+    def scan(self, drone_pos, world, blocked_mask: np.ndarray | None = None) -> np.ndarray:
+        """Vectorized 8-ray scan. ``blocked_mask`` is an optional precomputed
+        boolean grid of non-flyable cells (the env caches one per step)."""
         rng_cells = int(self.cfg.lidar_range_m / world.cfg.cell_size_m)
-        dirs = [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)]
-        out = np.full(8, rng_cells, dtype=float)
-        for i, (dx, dy) in enumerate(dirs):
-            for r in range(1, rng_cells + 1):
-                x, y = drone_pos[0] + dx * r, drone_pos[1] + dy * r
-                if not world.in_bounds(x, y) or not world.is_flyable(x, y):
-                    out[i] = r; break
-        out += self.rng.normal(0, 0.2, size=8)       # ranging noise
+        S = world.size
+        if blocked_mask is None:
+            blocked_mask = ~world.flyable_mask
+        radii = np.arange(1, rng_cells + 1)
+        xs = int(drone_pos[0]) + self._DIRS[:, 0][:, None] * radii[None, :]  # (8, R)
+        ys = int(drone_pos[1]) + self._DIRS[:, 1][:, None] * radii[None, :]
+        oob = (xs < 0) | (xs >= S) | (ys < 0) | (ys >= S)
+        hit = oob | blocked_mask[np.clip(ys, 0, S - 1), np.clip(xs, 0, S - 1)]
+        any_hit = hit.any(axis=1)
+        first = hit.argmax(axis=1) + 1                # ray distance of first hit
+        out = np.where(any_hit, first, rng_cells).astype(float)
+        out += self.rng.normal(0, 0.2, size=8)        # ranging noise
         return np.clip(out, 0, rng_cells)
 
 

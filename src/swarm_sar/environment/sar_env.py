@@ -18,7 +18,10 @@ import numpy as np
 
 from swarm_sar.config import EnvConfig, load_config
 from swarm_sar.environment.entities import CellType
-from swarm_sar.environment.world import SARWorld
+from swarm_sar.environment.world import (
+    BLOCKS_FLIGHT_VALUES, OCCLUDES_VALUES, SARWorld,
+)
+from swarm_sar.utils.geometry import disk_visibility_offsets
 from swarm_sar.environment.reward_engine import RewardEngine, RewardInputs
 from swarm_sar.drone.drone import Drone, ACTIONS, ACTION_TO_IDX
 from swarm_sar.communication.comms import CommNetwork, Message
@@ -57,8 +60,11 @@ class SARSwarmEnv:
     # spaces                                                             #
     # ------------------------------------------------------------------ #
     def _compute_obs_dim(self) -> int:
-        # Match ObservationEngine frame size: 7 + 9 + 4 + 6*k + 4
-        return 7 + 9 + 4 + (6 * self.cfg.k_nearest_drones) + 4
+        # Match ObservationEngine frame layout: own state (7) + victim info (9)
+        # + hazards (4) + egocentric map patch (3 channels x P x P) + LiDAR (8)
+        # + peers (6 * k) + comms (4).
+        p = self.cfg.obs_map_patch
+        return 7 + 9 + 4 + (3 * p * p) + 8 + (6 * self.cfg.k_nearest_drones) + 4
 
     @property
     def action_space_n(self) -> int:
@@ -135,6 +141,7 @@ class SARSwarmEnv:
         self._victims_shared: List[set] = [set() for _ in range(self.n)]
         self.allocator = TaskAllocator(self.cfg.task_allocation_strategy, self.rng)
 
+        self._refresh_world_masks()
         self._sense_all()
         obs, _ = self.obs_engine.get_obs(self)
         self._record_frame({a: 0 for a in self.agents})
@@ -325,6 +332,7 @@ class SARSwarmEnv:
         env_events = self.world.step_dynamic()
         if any(env_events.values()):
             self.environment_events.append({"step": self.t, **env_events})
+        self._refresh_world_masks()      # fire/smoke spread changes occlusion
         self.faults.step(self.drones, self.t)
         self.comm.step(self.t)
 
@@ -467,7 +475,18 @@ class SARSwarmEnv:
             if local_victim >= 0:
                 victims[local_victim].assigned_drone = alive_indices[local_drone]
 
+    def _refresh_world_masks(self) -> None:
+        """Cache per-step boolean views of the grid used by sensing and obs."""
+        self._occ_mask = np.isin(self.world.grid, OCCLUDES_VALUES)
+        self._blocked_mask = np.isin(self.world.grid, BLOCKS_FLIGHT_VALUES)
+
     def _sense_one(self, i: int) -> Tuple[int, int, int, int]:
+        """Vectorized sensing sweep with exact Bresenham line-of-sight.
+
+        Semantics are identical to the per-cell ``world.line_of_sight`` loop,
+        but the lines are precomputed per radius (translation-invariant) so the
+        sweep is a handful of NumPy fancy-indexing operations.
+        """
         d = self.drones[i]
         if not d.mission.alive:
             return 0, 0, 0, 0
@@ -478,27 +497,35 @@ class SARSwarmEnv:
         )
         rad = max(1, rad)
         cx, cy = int(d.kinematics.pos[0]), int(d.kinematics.pos[1])
-        new_cells = new_team_cells = dup = 0
         S = self.world.size
-        for dx in range(-rad, rad + 1):
-            for dy in range(-rad, rad + 1):
-                x, y = cx + dx, cy + dy
-                if not (0 <= x < S and 0 <= y < S):
-                    continue
-                if dx * dx + dy * dy > rad * rad:
-                    continue
-                if not self.world.line_of_sight((cx, cy), (x, y)):
-                    continue
-                if not self.explored[i][y, x]:
-                    self.explored[i][y, x] = True
-                    self._new_cells_since_comm[i].append([int(y), int(x)])
-                    new_cells += 1
-                    if not self.global_explored[y, x]:
-                        self.global_explored[y, x] = True
-                        new_team_cells += 1
-                else:
-                    dup += 1
-        
+
+        offs, line_y, line_x, line_valid = disk_visibility_offsets(rad)
+        ys = cy + offs[:, 0]
+        xs = cx + offs[:, 1]
+        in_bounds = (xs >= 0) & (xs < S) & (ys >= 0) & (ys < S)
+        # Intermediate line cells lie inside the bounding box of the endpoints,
+        # so for in-bounds targets they are in bounds too; the clip only guards
+        # indexing for targets that in_bounds already discards.
+        ly = np.clip(cy + line_y, 0, S - 1)
+        lx = np.clip(cx + line_x, 0, S - 1)
+        blocked = (self._occ_mask[ly, lx] & line_valid).any(axis=1)
+        visible = in_bounds & ~blocked
+
+        vy, vx = ys[visible], xs[visible]
+        already = self.explored[i][vy, vx]
+        ny, nx = vy[~already], vx[~already]
+        dup = int(already.sum())
+        new_cells = int(ny.size)
+        if new_cells:
+            self.explored[i][ny, nx] = True
+            team_new = ~self.global_explored[ny, nx]
+            self.global_explored[ny, nx] = True
+            new_team_cells = int(team_new.sum())
+            self._new_cells_since_comm[i].extend(
+                [int(y), int(x)] for y, x in zip(ny, nx))
+        else:
+            new_team_cells = 0
+
         frontiers = 0
         if new_cells > 0:
             for dx, dy in [(0,1), (0,-1), (1,0), (-1,0)]:

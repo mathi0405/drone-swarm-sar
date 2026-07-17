@@ -131,6 +131,9 @@ class MAPPOTrainer:
                                   and torch.cuda.is_available()) else "cpu")
         self._base_env_cfg = copy.deepcopy(cfg.env)
         self.num_envs = max(1, int(getattr(cfg.train, "num_envs", 1)))
+        # Samples the per-edge packet-loss mask applied to the learned comm
+        # channel (kept separate from env rngs so it never perturbs the sim).
+        self._np_rng = np.random.default_rng(cfg.train.seed + 977)
         
         # Local dummy env for metadata
         self.env = SARSwarmEnv(copy.deepcopy(cfg.env), seed=cfg.train.seed)
@@ -186,7 +189,9 @@ class MAPPOTrainer:
             * self.cfg.env.world.size
             for a in self.env.possible_agents
         ], dtype=np.float32)
-        return comm_adjacency(pos, self.cfg.env.comm.range_m)
+        return comm_adjacency(pos, self.cfg.env.comm.range_m,
+                              packet_loss=self.cfg.env.comm.packet_loss,
+                              rng=self._np_rng)
 
     def _graph_tensor(self, adj: np.ndarray, policy):
         return torch_graph_from_adjacency(adj, self.device, policy_uses_pyg_graph(policy))
@@ -644,6 +649,7 @@ class MAPPOTrainer:
         """Deterministic evaluation on the *base* (non-curriculum) environment."""
         env = SARSwarmEnv(copy.deepcopy(self._base_env_cfg), seed=seed)
         frame_dim = env._compute_obs_dim()
+        eval_rng = np.random.default_rng(seed)          # deterministic channel loss
         returns, rescue_rates, coverages = [], [], []
         for ep in range(episodes):
             obs, _ = env.reset(seed=seed + ep)
@@ -663,7 +669,9 @@ class MAPPOTrainer:
                     pos = np.array([
                         obs[a][-frame_dim:-frame_dim + 2] * env.cfg.world.size
                         for a in env.possible_agents], dtype=np.float32)
-                    adj = comm_adjacency(pos, env.cfg.comm.range_m)
+                    adj = comm_adjacency(pos, env.cfg.comm.range_m,
+                                         packet_loss=env.cfg.comm.packet_loss,
+                                         rng=eval_rng)
                     graph = self._graph_tensor(adj, policy)
                     obs_batch = torch.tensor(
                         np.array([obs[a] for a in env.possible_agents]),

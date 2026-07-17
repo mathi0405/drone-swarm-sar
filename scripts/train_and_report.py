@@ -133,7 +133,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Train Swarm-SAR MAPPO experiments and report SIS.")
     parser.add_argument("--config", default="configs/training/mappo_easy.yaml")
     parser.add_argument("--archs", nargs="+", default=["transformer_gnn"],
-                        choices=["mlp", "gnn", "transformer", "transformer_gnn"])
+                        choices=["mlp", "gru", "gnn", "transformer", "transformer_gnn"])
     parser.add_argument("--seeds", type=int, nargs="+", default=[0])
     parser.add_argument("--timesteps", type=int, default=None)
     parser.add_argument("--eval-seeds", type=int, nargs="+", default=[0, 1, 2, 3, 4])

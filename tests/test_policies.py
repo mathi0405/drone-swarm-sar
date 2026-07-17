@@ -12,7 +12,7 @@ def test_build_all_archs():
         return
     import torch
     spec = _spec()
-    for arch in ["mlp", "gnn", "transformer", "transformer_gnn"]:
+    for arch in ["mlp", "gru", "gnn", "transformer", "transformer_gnn"]:
         model = build_policy(ModelConfig(arch=arch), spec)
         obs = torch.zeros(spec.n_agents, spec.obs_dim)
         gs = torch.zeros(spec.n_agents, spec.global_dim)
