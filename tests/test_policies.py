@@ -63,3 +63,61 @@ def test_factory_requires_torch_message():
         raise AssertionError("should have raised")
     except ImportError as e:
         assert "PyTorch" in str(e)
+
+
+def test_transformer_entity_tokenization():
+    """With a frame layout the Transformer builds entity + temporal tokens."""
+    if not HAS_TORCH:
+        return
+    import torch
+
+    from swarm_sar.environment.observation import HISTORY_LEN, frame_layout
+
+    layout = frame_layout(3, 7)
+    frame_dim = sum(layout.values())
+    spec = PolicySpec(obs_dim=HISTORY_LEN * frame_dim, n_actions=8,
+                      global_dim=51, n_agents=3, frame_layout=layout)
+    for arch in ["transformer", "transformer_gnn"]:
+        model = build_policy(ModelConfig(arch=arch, hidden_dim=64), spec)
+        enc = model.encoder.tf1 if arch == "transformer_gnn" else model.encoder
+        assert enc.entity_mode
+        # CLS + self + victims + map + k peers + msgs + HISTORY_LEN temporal.
+        assert len(enc.token_labels) == 4 + 3 + 1 + HISTORY_LEN
+        obs = torch.randn(3, spec.obs_dim)
+        logits, value = model(obs, global_state=torch.randn(3, 51),
+                              graph=torch.eye(3))
+        assert logits.shape == (3, 8)
+        assert torch.isfinite(logits).all()
+
+
+def test_transformer_entity_peer_padding_is_masked():
+    """All-zero peer slots (absent peers) must not poison attention."""
+    if not HAS_TORCH:
+        return
+    import torch
+
+    from swarm_sar.environment.observation import HISTORY_LEN, frame_layout
+
+    layout = frame_layout(3, 7)
+    frame_dim = sum(layout.values())
+    spec = PolicySpec(obs_dim=HISTORY_LEN * frame_dim, n_actions=8,
+                      global_dim=51, n_agents=2, frame_layout=layout)
+    model = build_policy(ModelConfig(arch="transformer", hidden_dim=64), spec)
+    obs = torch.randn(2, spec.obs_dim).view(2, HISTORY_LEN, frame_dim)
+    peer_start = sum(w for name, w in layout.items() if name != "peers"
+                     ) - layout["comms"]
+    obs[:, -1, peer_start:peer_start + layout["peers"]] = 0.0
+    logits, _ = model(obs.reshape(2, -1), global_state=torch.randn(2, 51))
+    assert torch.isfinite(logits).all()
+
+
+def test_transformer_without_layout_falls_back_to_temporal():
+    if not HAS_TORCH:
+        return
+    import torch
+    spec = _spec()                          # no frame_layout
+    model = build_policy(ModelConfig(arch="transformer"), spec)
+    assert not model.encoder.entity_mode
+    logits, _ = model(torch.zeros(3, spec.obs_dim),
+                      global_state=torch.zeros(3, spec.global_dim))
+    assert logits.shape == (3, spec.n_actions)

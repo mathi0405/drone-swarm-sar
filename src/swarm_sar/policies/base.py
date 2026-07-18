@@ -112,6 +112,10 @@ class PolicySpec:
     n_actions: int
     global_dim: int
     n_agents: int
+    # Per-frame segment sizes (see observation.frame_layout).  Enables entity
+    # tokenization in the Transformer encoders; None falls back to
+    # temporal-only tokens (synthetic specs, pre-layout checkpoints).
+    frame_layout: dict[str, int] | None = None
 
 
 def build_policy(model_cfg, spec: PolicySpec, centralized: bool = True):
@@ -128,10 +132,12 @@ def build_policy(model_cfg, spec: PolicySpec, centralized: bool = True):
         enc = GNNEncoder(spec.obs_dim, model_cfg.hidden_dim, model_cfg)
     elif arch == "transformer":
         from swarm_sar.policies.transformer_policy import TransformerEncoder
-        enc = TransformerEncoder(spec.obs_dim, model_cfg.hidden_dim, model_cfg)
+        enc = TransformerEncoder(spec.obs_dim, model_cfg.hidden_dim, model_cfg,
+                                 frame_layout=spec.frame_layout)
     elif arch == "transformer_gnn":
         from swarm_sar.policies.transformer_gnn_policy import TransformerGNNEncoder
-        enc = TransformerGNNEncoder(spec.obs_dim, model_cfg.hidden_dim, model_cfg)
+        enc = TransformerGNNEncoder(spec.obs_dim, model_cfg.hidden_dim, model_cfg,
+                                    frame_layout=spec.frame_layout)
     else:
         raise ValueError(f"unknown arch {arch}")
     return ActorCritic(enc, spec.n_actions, spec.global_dim,

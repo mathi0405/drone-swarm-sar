@@ -23,6 +23,7 @@ import numpy as np
 
 from swarm_sar.config import Config
 from swarm_sar.drone.drone import ACTIONS
+from swarm_sar.environment.observation import frame_layout
 from swarm_sar.environment.sar_env import SARSwarmEnv
 from swarm_sar.environment.vec_env import SubprocVecEnv
 from swarm_sar.policies.base import HAS_TORCH, PolicySpec, build_policy
@@ -278,7 +279,9 @@ class MAPPOTrainer:
         # perception from thousands of redundant dims).
         spec = PolicySpec(obs_dim=self.env.obs_dim, n_actions=self.env.n_actions,
                           global_dim=int(self.env.global_state().shape[0]),
-                          n_agents=self.n)
+                          n_agents=self.n,
+                          frame_layout=frame_layout(cfg.env.k_nearest_drones,
+                                                    cfg.env.obs_map_patch))
         self.spec = spec
         # shared vs independent parameters
         centralized = bool(cfg.train.centralized_critic)
@@ -827,7 +830,13 @@ class MAPPOTrainer:
             return
         target = self._linear_stage(iteration, total_iters)
         if self.cfg.train.curriculum_mode == "performance":
-            target = max(target, self._perf_stage)
+            if self.cfg.train.curriculum_linear_fallback:
+                target = max(target, self._perf_stage)
+            else:
+                # Science runs: the gate alone drives progression, so
+                # "reached the benchmark stage" always means "mastered the
+                # ladder", never "ran out the clock".
+                target = self._perf_stage
         if target == self._cur_stage:
             return
         self._cur_stage = target
@@ -876,13 +885,18 @@ class MAPPOTrainer:
         return {"stage_train_rescue_rate": rescue}
 
     @torch.no_grad()
-    def evaluate_policy(self, episodes: int = 3, seed: int = 10_000,
+    def evaluate_policy(self, episodes: int | None = None, seed: int = 10_000,
                         env_cfg=None) -> dict:
         """Deterministic evaluation; defaults to the base (benchmark) env.
 
         Pass ``env_cfg`` to evaluate on a specific configuration (used by the
         performance-gated curriculum to test mastery of the current stage).
+        ``episodes`` defaults to ``train.eval_episodes`` — best-checkpoint
+        selection keys on this, so it must have enough resolution to rank
+        checkpoints (>= 20 episodes; 3 was a coin flip).
         """
+        if episodes is None:
+            episodes = max(1, int(self.cfg.train.eval_episodes))
         env = SARSwarmEnv(copy.deepcopy(env_cfg or self._base_env_cfg), seed=seed)
         frame_dim = env._compute_obs_dim()
         eval_rng = np.random.default_rng(seed)          # deterministic channel loss

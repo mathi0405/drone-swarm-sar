@@ -37,11 +37,13 @@ pip install -r requirements.txt && pip install -e ".[rl]"
 # validate the whole pipeline in ~1-2 min (tiny run)
 python scripts/train_and_report.py --smoke
 
-# the real thing (edit to taste)
+# the real thing — the science campaign (5 seeds/arch, 3M steps, gate-driven
+# curriculum, learned-comm pressure; all from the training YAML defaults)
 python scripts/train_and_report.py \
-    --archs mlp gnn transformer transformer_gnn \
-    --seeds 0 1 2 \
-    --timesteps 1000000
+    --config configs/training/mappo_transformer_gnn.yaml \
+    --archs mlp gru gnn transformer transformer_gnn \
+    --seeds 0 1 2 3 4 \
+    --timesteps 3000000
 ```
 
 ## What you get (all measured, no placeholders)
@@ -57,9 +59,9 @@ python scripts/train_and_report.py \
 
 | GPU | Suggested |
 |-----|-----------|
-| Laptop (≤6 GB) | `--archs transformer_gnn --seeds 0 --timesteps 300000` |
-| RTX 3080/4080 (10–16 GB) | run `--archs mlp gnn transformer transformer_gnn --seeds 0 1 2 --timesteps 1000000` |
-| A100 / multi-GPU | add more seeds; use the RLlib path (`scripts/train.py --rllib`) for 10-drone / large maps |
+| Laptop (≤6 GB) | `--archs transformer_gnn --seeds 0 --timesteps 300000` — smoke/debug only; do **not** report numbers from this scale |
+| RTX 3080/4080 (10–16 GB) | `--archs mlp gru gnn transformer transformer_gnn --seeds 0 1 2 3 4 --timesteps 3000000` (the science campaign; ~9× longer than the 300k laptop runs) |
+| A100 / multi-GPU | same, then push the lead architecture to 5–10M steps; use the RLlib path (`scripts/train.py --rllib`) for 10-drone / large maps |
 
 ## Notes
 

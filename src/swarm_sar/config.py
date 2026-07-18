@@ -215,9 +215,16 @@ class TrainConfig(BaseModel):
     # Weight of the learned-comm gate cost added to the loss (0 disables).
     # Positive values pressure the message gate toward silence, making
     # "learning when to speak" an actual gradient (see LearnedCommHead).
-    comm_gate_coef: float = 0.0
+    # Non-zero by default: bandwidth-constrained learned communication is the
+    # thesis, so it must actually be trained under pressure.
+    comm_gate_coef: float = 0.01
     checkpoint_every: int = 100_000
     eval_every: int = 50_000
+    # Episodes per in-training deterministic eval.  Best-checkpoint selection
+    # keys on this eval: at 3 episodes x 4-8 victims the rescue-rate
+    # resolution was ~1/12 — a coin flip.  20 episodes matches the frozen
+    # benchmark protocol (see evaluation/benchmark.py).
+    eval_episodes: int = 20
     bc_warmstart_episodes: int = 0
     bc_epochs: int = 2
     imitation_coef: float = 0.0
@@ -231,6 +238,12 @@ class TrainConfig(BaseModel):
     curriculum_rescue_thresholds: list[float] = Field(
         default_factory=lambda: [0.8, 0.7, 0.6, 0.5])
     curriculum_gate_min_episodes: int = 10
+    # With the fallback ON, the linear 20%-per-stage clock is a floor under
+    # the performance gate, so a stalled policy is still dragged to full
+    # difficulty within budget.  Science runs should turn it OFF: stages then
+    # advance ONLY when mastered, and time-at-stage becomes a measurement
+    # rather than a schedule.
+    curriculum_linear_fallback: bool = True
     # Fraction of parallel envs pinned to the full benchmark during curriculum
     # stages, so the policy never fully forgets the target distribution and
     # stage switches are less of a distribution shock.

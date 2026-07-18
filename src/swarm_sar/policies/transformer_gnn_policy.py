@@ -15,9 +15,11 @@ from swarm_sar.policies.transformer_policy import TransformerEncoder
 
 
 class TransformerGNNEncoder(nn.Module):
-    def __init__(self, in_dim: int, hidden: int, cfg):
+    def __init__(self, in_dim: int, hidden: int, cfg,
+                 frame_layout: dict[str, int] | None = None):
         super().__init__()
-        self.tf1 = TransformerEncoder(in_dim, hidden, cfg)
+        self.tf1 = TransformerEncoder(in_dim, hidden, cfg,
+                                      frame_layout=frame_layout)
         self.ln_tf1 = nn.LayerNorm(hidden)
 
         self.gnn1 = GNNEncoder(hidden, hidden, cfg)

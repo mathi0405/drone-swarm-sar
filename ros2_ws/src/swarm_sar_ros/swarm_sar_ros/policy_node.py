@@ -12,9 +12,9 @@ import json
 
 try:
     import rclpy
-    from rclpy.node import Node
     from geometry_msgs.msg import Twist
     from nav_msgs.msg import Odometry
+    from rclpy.node import Node
     from sensor_msgs.msg import BatteryState
     from std_msgs.msg import String
     _HAS_ROS = True

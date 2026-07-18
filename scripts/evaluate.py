@@ -19,7 +19,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="configs/training/mappo_transformer_gnn.yaml")
     ap.add_argument("--ckpt", required=True, help="Path to trained model checkpoint(s) (.pt)", nargs="+")
-    ap.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2, 3, 4])
+    # Canonical protocol: the frozen benchmark's 20 held-out map seeds, so
+    # these numbers are directly comparable with scripts/run_benchmark.py.
+    ap.add_argument("--seeds", type=int, nargs="+", default=list(range(200, 220)))
     ap.add_argument("--out", default="results/eval.json")
     args = ap.parse_args()
 
@@ -33,7 +35,8 @@ def main():
         ev = Evaluator(cfg.env, actor_factory=actor_factory)
 
         res = ev.evaluate(args.seeds)
-        rob = ev.robustness(args.seeds[:3])
+        # >= 10 seeds: below that the nominal/faulted SIS ratio is noise.
+        rob = ev.robustness(args.seeds[:10])
         gen = ev.generalization(args.seeds[: max(1, len(args.seeds) // 2)], args.seeds[len(args.seeds) // 2:])
         inf = ev.inference_time()
 

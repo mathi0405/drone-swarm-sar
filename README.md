@@ -6,7 +6,6 @@
 
 *Centralized Training, Decentralized Execution (CTDE) · Multi-Agent PPO · Transformer + Graph Neural Networks*
 
-[![CI](https://github.com/your-org/drone-swarm-sar/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/drone-swarm-sar/actions)
 [![Python](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
@@ -49,7 +48,7 @@ These come directly from the shipped code (`scripts/run_demo.py`, `scripts/run_e
 
 > **Finding.** Communication nearly **triples** the Swarm Intelligence Score (25 → 72) even though raw coverage is similar — coordination, not exploration, is the bottleneck. Without comms the swarm actually covers *slightly more* area (drones don't cluster) but rescues far fewer victims and collides more. This is exactly the cooperative-intelligence effect the project sets out to measure.
 
-Single best demo episode: **8/8 victims rescued, 89% coverage, SIS 90.4**. Decision latency ≈ **4.5 ms (220 Hz)**.
+Single best demo episode (heuristic controller): **8/8 victims rescued, 89% coverage, SIS 90.4**. Measured decision latency for the *neural* policy: **≈24 ms/step (~41 Hz) on laptop CPU** (`scripts/evaluate.py`, `inference` block — hardware-dependent; re-measure on your target platform).
 
 
 

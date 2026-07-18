@@ -9,12 +9,17 @@ train:
   algo: mappo
   policy_sharing: shared
   centralized_critic: true
-  num_envs: 4
+  num_envs: 16
   curriculum: true
-  bc_warmstart_episodes: 8
-  bc_epochs: 2
-  imitation_coef: 0.02
+  curriculum_mode: performance
+  curriculum_linear_fallback: false
+  bc_warmstart_episodes: 16
+  bc_epochs: 3
+  imitation_coef: 0.05
+  imitation_anneal_frac: 0.5
+  comm_gate_coef: 0.01
+  eval_episodes: 20
   total_timesteps: 3000000
   lr: 0.0003
   seed: 0
-log: { experiment_name: mappo_transformer, seeds: [0, 1, 2] }
+log: { experiment_name: mappo_transformer, seeds: [0, 1, 2, 3, 4] }

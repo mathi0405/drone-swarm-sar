@@ -10,6 +10,27 @@ from swarm_sar.environment.entities import CellType
 HISTORY_LEN = 8
 
 
+def frame_layout(k_nearest: int, map_patch: int) -> dict[str, int]:
+    """Ordered per-frame segment sizes (name -> width).
+
+    Single source of truth for the frame structure, shared by
+    ``ObservationEngine.get_obs`` / ``SARSwarmEnv._compute_obs_dim`` (which
+    must sum to the same total) and the entity-tokenizing Transformer (which
+    slices a frame back into (self, victims, map, peers, messages) tokens).
+    The ``peers`` segment is ``k_nearest`` blocks of 6 features each.
+    """
+    p = map_patch
+    return {
+        "own_state": 8,
+        "victim_info": 9,
+        "hazards": 4,
+        "map_patch": 3 * p * p,
+        "lidar": 8,
+        "peers": 6 * k_nearest,
+        "comms": 4,
+    }
+
+
 class ObservationEngine:
     def __init__(self, cfg, num_drones):
         self.cfg = cfg

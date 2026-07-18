@@ -11,10 +11,21 @@ train:
   centralized_critic: true
   num_envs: 16
   curriculum: true
-  bc_warmstart_episodes: 8
-  bc_epochs: 2
-  imitation_coef: 0.02
+  # Science runs: stages advance only when the performance gate fires — no
+  # linear clock dragging the policy to the benchmark before it is ready.
+  curriculum_mode: performance
+  curriculum_linear_fallback: false
+  # Stronger, longer-annealed imitation (DAgger-style: the heuristic relabels
+  # states the POLICY visits each rollout) so PPO escapes the BC plateau
+  # before the training wheels come off.
+  bc_warmstart_episodes: 16
+  bc_epochs: 3
+  imitation_coef: 0.05
+  imitation_anneal_frac: 0.5
+  # Learned bandwidth-constrained communication trains under real pressure.
+  comm_gate_coef: 0.01
+  eval_episodes: 20
   total_timesteps: 3000000
   lr: 0.0003
   seed: 0
-log: { experiment_name: mappo_transformer_gnn, seeds: [0, 1, 2] }
+log: { experiment_name: mappo_transformer_gnn, seeds: [0, 1, 2, 3, 4] }

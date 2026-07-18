@@ -360,8 +360,11 @@ def fig_failure_recovery(log, path):
 # Fig 15 - attention heatmap  (real if torch, else illustrative)          #
 # ----------------------------------------------------------------------- #
 def fig_attention_heatmap(path, n_tokens=8, seed=0):
+    # Token order mirrors TransformerEncoder.token_labels (entity mode):
+    # CLS + (self, victims, map, peer x k, msgs) entity tokens; the temporal
+    # tokens are omitted here to keep the illustrative figure readable.
     rng = np.random.default_rng(seed)
-    tokens = ["self", "peer1", "peer2", "peer3", "occ-map", "victim-map", "msg", "cls"][:n_tokens]
+    tokens = ["cls", "self", "victims", "map", "peer1", "peer2", "peer3", "msgs"][:n_tokens]
     A = rng.dirichlet(np.ones(n_tokens) * 0.6, size=n_tokens)
     fig, ax = plt.subplots(figsize=(6.4, 5.6))
     im = ax.imshow(A, cmap="viridis")

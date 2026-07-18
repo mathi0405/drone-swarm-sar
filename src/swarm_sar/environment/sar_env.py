@@ -20,7 +20,11 @@ from swarm_sar.communication.comms import CommNetwork, Message
 from swarm_sar.config import EnvConfig, load_config
 from swarm_sar.drone.drone import ACTION_TO_IDX, ACTIONS, Drone
 from swarm_sar.environment.entities import CellType
-from swarm_sar.environment.observation import HISTORY_LEN, ObservationEngine
+from swarm_sar.environment.observation import (
+    HISTORY_LEN,
+    ObservationEngine,
+    frame_layout,
+)
 from swarm_sar.environment.reward_engine import RewardEngine, RewardInputs
 from swarm_sar.environment.world import (
     BLOCKS_FLIGHT_VALUES,
@@ -62,11 +66,11 @@ class SARSwarmEnv:
     # spaces                                                             #
     # ------------------------------------------------------------------ #
     def _compute_obs_dim(self) -> int:
-        # Match ObservationEngine frame layout: own state (8) + victim info (9)
+        # Sum of the shared frame layout: own state (8) + victim info (9)
         # + hazards (4) + egocentric map patch (3 channels x P x P) + LiDAR (8)
         # + peers (6 * k) + comms (4).
-        p = self.cfg.obs_map_patch
-        return 8 + 9 + 4 + (3 * p * p) + 8 + (6 * self.cfg.k_nearest_drones) + 4
+        return sum(frame_layout(self.cfg.k_nearest_drones,
+                                self.cfg.obs_map_patch).values())
 
     @property
     def action_space_n(self) -> int:

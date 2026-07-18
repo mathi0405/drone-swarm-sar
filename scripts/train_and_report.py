@@ -132,12 +132,19 @@ def _make_figures(records: list[dict], out_dir: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train Swarm-SAR MAPPO experiments and report SIS.")
-    parser.add_argument("--config", default="configs/training/mappo_easy.yaml")
+    # The science config is the default: with the easy config, a default run
+    # would train AND evaluate on the small 40-cell world while reporting
+    # numbers that read like benchmark results.  Pass mappo_easy.yaml
+    # explicitly for debugging only.
+    parser.add_argument("--config", default="configs/training/mappo_transformer_gnn.yaml")
     parser.add_argument("--archs", nargs="+", default=["transformer_gnn"],
                         choices=["mlp", "gru", "gnn", "transformer", "transformer_gnn"])
-    parser.add_argument("--seeds", type=int, nargs="+", default=[0])
+    # 5 training seeds per architecture: single-seed MARL curves are noise.
+    parser.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2, 3, 4])
     parser.add_argument("--timesteps", type=int, default=None)
-    parser.add_argument("--eval-seeds", type=int, nargs="+", default=[0, 1, 2, 3, 4])
+    # Frozen benchmark map seeds — identical to scripts/run_benchmark.py, so
+    # every method/architecture is compared on the same 20 held-out maps.
+    parser.add_argument("--eval-seeds", type=int, nargs="+", default=list(range(200, 220)))
     parser.add_argument("--out", default="results/trained")
     parser.add_argument("--smoke", action="store_true", help="one tiny train + evaluation run")
     parser.add_argument("--skip-eval", action="store_true")
