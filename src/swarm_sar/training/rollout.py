@@ -106,7 +106,7 @@ class NeuralActor:
             # from observations — evaluation must not get a cleaner graph than
             # training did.
             pos = np.array([d.gps_position() for d in self.env.drones], dtype=np.float32)
-            adj = comm_adjacency(pos, self.env.cfg.comm.range_m,
+            adj = comm_adjacency(pos, self.env.cfg.comm.range_m / self.env.cfg.world.cell_size_m,
                                  packet_loss=self.env.cfg.comm.packet_loss,
                                  rng=self.env.rng)
             graph = torch_graph_from_adjacency(

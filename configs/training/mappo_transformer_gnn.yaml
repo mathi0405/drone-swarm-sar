@@ -24,6 +24,7 @@ train:
   imitation_anneal_frac: 0.5
   # Learned bandwidth-constrained communication trains under real pressure.
   comm_gate_coef: 0.01
+  comm_gate_warmup_frac: 0.2
   eval_episodes: 20
   total_timesteps: 3000000
   lr: 0.0003

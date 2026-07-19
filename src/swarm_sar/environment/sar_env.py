@@ -77,6 +77,32 @@ class SARSwarmEnv:
         return self.n_actions
 
     # ------------------------------------------------------------------ #
+    # metre → cell conversions (positions live on the cell grid; all      #
+    # *_m config values are metres and convert exactly once, here)        #
+    # ------------------------------------------------------------------ #
+    @property
+    def cell_size_m(self) -> float:
+        return max(1e-6, self.cfg.world.cell_size_m)
+
+    @property
+    def comm_range_c(self) -> float:
+        return self.cfg.comm.range_m / self.cell_size_m
+
+    @property
+    def collision_radius_c(self) -> float:
+        return self.cfg.collision_radius_m / self.cell_size_m
+
+    @property
+    def safety_margin_c(self) -> float:
+        return self.cfg.safety_margin_m / self.cell_size_m
+
+    @property
+    def rescue_radius_c(self) -> float:
+        """Single definition of "at the victim" (cells), shared with the
+        scripted baselines so heuristics and metrics cannot drift apart."""
+        return self.collision_radius_c + 1.0
+
+    # ------------------------------------------------------------------ #
     # lifecycle                                                          #
     # ------------------------------------------------------------------ #
     def reset(self, seed: int | None = None) -> tuple[dict[str, np.ndarray], dict[str, dict]]:
@@ -117,7 +143,8 @@ class SARSwarmEnv:
             starts.append(start)
             self.drones.append(Drone(i, self.cfg, self.rng, start))
 
-        self.comm = CommNetwork(self.cfg.comm, self.n, self.rng)
+        self.comm = CommNetwork(self.cfg.comm, self.n, self.rng,
+                                cell_size_m=self.cell_size_m)
         self.comm.reset()
         self.faults = FaultInjector(self.cfg.faults, self.rng)
         self.faults.reset()
@@ -145,6 +172,14 @@ class SARSwarmEnv:
         # drone's last broadcast, and the victim ids it has already shared.
         self._new_cells_since_comm: list[list[list]] = [[] for _ in range(self.n)]
         self._victims_shared: list[set] = [set() for _ in range(self.n)]
+        # Decentralized knowledge state.  ``_victims_known[i]`` is the set of
+        # victim ids drone i has detected itself or been TOLD about; broadcasts
+        # may only share these.  ``_peer_intent[i][j]`` is the latest intent
+        # (target / assignment / mode) drone i actually RECEIVED from drone j —
+        # the only source the observation may use for peer intent (reading
+        # world state teleported every assignment through packet loss).
+        self._victims_known: list[set] = [set() for _ in range(self.n)]
+        self._peer_intent: list[dict[int, dict]] = [{} for _ in range(self.n)]
         self.allocator = TaskAllocator(self.cfg.task_allocation_strategy, self.rng)
         # Event-based safety tracking: contact pairs currently touching (so
         # collisions penalize the ONSET only) and who was in a hazard cell
@@ -162,7 +197,8 @@ class SARSwarmEnv:
 
     def _safe_spawn_position(self, base: np.ndarray, starts: list[np.ndarray],
                              idx: int, phase: float) -> np.ndarray:
-        sep = max(self.cfg.min_spawn_separation_m, self.cfg.collision_radius_m * 2.0)
+        sep = max(self.cfg.min_spawn_separation_m / self.cell_size_m,
+                  self.collision_radius_c * 2.0)
         S = self.world.size
         if not starts:
             center = np.clip(np.asarray(base, float), sep, S - 1 - sep)
@@ -242,7 +278,7 @@ class SARSwarmEnv:
         has_peer_in_range = False
         for j, other in enumerate(self.drones):
             if i != j and other.mission.alive and other.faults.comm_ok:
-                if np.linalg.norm(d.kinematics.pos - other.kinematics.pos) <= self.cfg.comm.range_m:
+                if np.linalg.norm(d.kinematics.pos - other.kinematics.pos) <= self.comm_range_c:
                     has_peer_in_range = True
                     break
 
@@ -261,7 +297,7 @@ class SARSwarmEnv:
                 if j == i or not other.mission.alive:
                     continue
                 dist = self._point_segment_distance(other.kinematics.pos, d.kinematics.pos, cand)
-                if dist < max(self.cfg.collision_radius_m, self.cfg.safety_margin_m):
+                if dist < max(self.collision_radius_c, self.safety_margin_c):
                     mask[idx] = 0.0
                     break
 
@@ -282,7 +318,8 @@ class SARSwarmEnv:
         speed = np.linalg.norm(vel)
         if speed > self.cfg.max_speed_mps and speed > 1e-9:
             vel = vel / speed * self.cfg.max_speed_mps
-        return d.kinematics.pos + vel + self.wind[:2]
+        # Mirror PointMassDynamics: velocity/wind are m/s, position is cells.
+        return d.kinematics.pos + (vel + self.wind[:2]) / self.cell_size_m
 
     def _segment_is_flyable(self, start: np.ndarray, end: np.ndarray) -> bool:
         steps = max(1, int(np.ceil(np.linalg.norm(end - start))))
@@ -557,6 +594,11 @@ class SARSwarmEnv:
         d = self.drones[i]
         if not d.mission.alive:
             return 0, 0, 0, 0
+        # A failed camera is BLIND: no exploration, no map updates, no belief.
+        # (Previously the fault only gated victim detection, so a blind drone
+        # still mapped 100+ cells per sweep.)
+        if not d.faults.camera_ok:
+            return 0, 0, 0, 0
         rad = int(
             self.cfg.sensors.camera_range_m
             * getattr(self, "visibility", 1.0)
@@ -606,7 +648,7 @@ class SARSwarmEnv:
         if not d.mission.alive:
             return 0, 0, 0
         det = res = dwell = 0
-        rescue_radius = self.cfg.collision_radius_m + 1.0
+        rescue_radius = self.rescue_radius_c
         for v in self.world.victims:
             if v.rescued:
                 continue
@@ -622,6 +664,9 @@ class SARSwarmEnv:
                     v.detected = True; v.detected_by = i; v.detected_step = self.t
                     v.assigned_drone = i
                     det += 1
+                if v.detected:
+                    # First-hand knowledge: this drone has seen the victim.
+                    self._victims_known[i].add(v.idx)
                 if v.detected and v._confirmations >= self.cfg.confirmations_required + 2 and not v.classified:
                     v.classified = True
                     self.reward_inputs[f"drone_{i}"].victim_classified = True
@@ -665,7 +710,7 @@ class SARSwarmEnv:
         d = self.drones[i]
         if not d.mission.alive:
             return False
-        radius = self.cfg.collision_radius_m + 1.0
+        radius = self.rescue_radius_c
         return any(v.detected and not v.rescued and np.linalg.norm(d.kinematics.pos - v.pos) <= radius
                    for v in self.world.victims)
 
@@ -704,7 +749,9 @@ class SARSwarmEnv:
         just_found = any(v.detected_by == i and v.detected_step == self.t
                          for v in self.world.victims)
         coverage_delta = int(self.explored[i].sum()) - int(self._last_comm_explored[i])
-        has_target = any(v.detected and not v.rescued for v in self.world.victims)
+        # Only victims THIS drone knows about can motivate its broadcasts.
+        has_target = any(v.detected and not v.rescued and v.idx in self._victims_known[i]
+                         for v in self.world.victims)
         return just_found or has_target or coverage_delta >= self.cfg.comm.coverage_delta_threshold
 
     # ------------------------------------------------------------------ #
@@ -722,11 +769,23 @@ class SARSwarmEnv:
         positions = {j: self.drones[j].kinematics.pos for j in range(self.n)}
         alive = {j: self.drones[j].mission.alive for j in range(self.n)}
         ok = {j: self.drones[j].faults.comm_ok for j in range(self.n)}
-        known = [(v.idx, v.pos.tolist()) for v in self.world.victims if v.detected and not v.rescued]
+        # A drone can only share victims it has seen or been told about —
+        # broadcasting the global detected set leaked other drones' finds.
+        known = [(v.idx, v.pos.tolist()) for v in self.world.victims
+                 if v.detected and not v.rescued and v.idx in self._victims_known[i]]
         delta_cells = self._new_cells_since_comm[i]
         new_victim_ids = {idx for idx, _ in known} - self._victims_shared[i]
+        # The sender's own intent rides along: this is the ONLY channel through
+        # which peers may learn a drone's target/assignment/mode (the
+        # observation used to read it straight from world state, making the
+        # broadcast action nearly worthless).
+        assigned = next((v for v in self.world.victims
+                         if v.assigned_drone == i and not v.rescued), None)
+        mode = 2.0 if d.mission.returning else (1.0 if assigned is not None else 0.0)
+        intent = {"target": assigned.pos.tolist() if assigned is not None else None,
+                  "has_assignment": float(assigned is not None), "mode": mode}
         payload = {"victims": known, "explored": int(self.explored[i].sum()),
-                   "explored_cells": delta_cells[-100:],
+                   "explored_cells": delta_cells[-100:], "intent": intent,
                    "battery": d.battery.soc, "pos": d.kinematics.pos.tolist()}
         self.comm.broadcast(i, positions, Message(i, "victim", payload, self.t), alive, ok)
         self.comm_events += 1
@@ -736,11 +795,17 @@ class SARSwarmEnv:
         return is_new_information
 
     def _merge_inbox(self, i: int):
-        """Fuse received victim/coverage information into local beliefs."""
+        """Fuse received victim/coverage/intent information into local state."""
         for m in self.comm.inbox(i):
+            intent = m.payload.get("intent")
+            if intent is not None:
+                cur = self._peer_intent[i].get(m.sender)
+                if cur is None or m.step >= cur.get("step", -1):
+                    self._peer_intent[i][m.sender] = {**intent, "step": m.step}
             for (_vidx, pos) in m.payload.get("victims", []):
                 x, y = int(pos[0]), int(pos[1])
                 self.victim_belief[i][y, x] = max(self.victim_belief[i][y, x], 0.9)
+                self._victims_known[i].add(_vidx)
             for y, x in m.payload.get("explored_cells", []):
                 if 0 <= y < self.world.size and 0 <= x < self.world.size:
                     self.explored[i][y, x] = True
@@ -789,7 +854,7 @@ class SARSwarmEnv:
         on.  Now the event fires once per new contact; lingering proximity is
         handled by the near-miss shaping in :meth:`_handle_separation_reward`.
         """
-        cr = self.cfg.collision_radius_m
+        cr = self.collision_radius_c
         alive = [d for d in self.drones if d.mission.alive]
         current: set = set()
         for a_i in range(len(alive)):
@@ -824,7 +889,7 @@ class SARSwarmEnv:
         stuck pair still feels steady (bounded) pressure to separate after
         the one-time collision event has fired.
         """
-        cr = self.cfg.collision_radius_m
+        cr = self.collision_radius_c
         for i in range(self.n):
             di = self.drones[i]
             if not di.mission.alive:
@@ -867,7 +932,7 @@ class SARSwarmEnv:
         visible = [
             j for j, other in enumerate(self.drones)
             if j != i and other.mission.alive and other.faults.comm_ok
-            and np.linalg.norm(other.kinematics.pos - d.kinematics.pos) <= self.cfg.comm.range_m
+            and np.linalg.norm(other.kinematics.pos - d.kinematics.pos) <= self.comm_range_c
         ]
         visible.sort(key=lambda j: np.linalg.norm(self.drones[j].kinematics.pos - d.kinematics.pos))
         for j in visible[: self.cfg.k_nearest_drones]:
@@ -952,7 +1017,8 @@ class SARSwarmEnv:
             "delivery_ratio": self.comm.delivery_ratio,
             "faults": self.faults.summary(),
             "environment_events": list(self.environment_events),
-            "energy_wh": float(sum(d.battery.capacity - d.battery.energy for d in self.drones)),
+            # Cumulative energy CONSUMED (recharging must not launder it).
+            "energy_wh": float(sum(d.battery.drawn_wh for d in self.drones)),
             "energy_budget_wh": float(sum(d.battery.cfg.capacity_wh for d in self.drones)),
             "success": bool(total_victims > 0 and rescued_count == total_victims),
         }

@@ -12,6 +12,10 @@ class Battery:
         self.capacity = cfg.capacity_wh
         self.energy = cfg.capacity_wh               # Wh remaining
         self.cycles = 0.0
+        # Cumulative energy actually drawn from the pack this episode.  The
+        # mission energy metric must count consumption, not net depletion —
+        # otherwise recharging launders energy use out of the score.
+        self.drawn_wh = 0.0
 
     @property
     def soc(self) -> float:
@@ -47,9 +51,15 @@ class Battery:
             draw += c.sensor_draw_w
         if comm:
             draw += c.comm_draw_w
-        used = draw * self.dt_h
-        self.energy = max(0.0, self.energy - used)
-        return used
+        return self.drain(draw * self.dt_h)
+
+    def drain(self, wh: float) -> float:
+        """Draw ``wh`` from the pack (bounded by remaining energy); returns the
+        amount actually drawn and adds it to the cumulative ``drawn_wh``."""
+        actual = min(max(0.0, wh), self.energy)
+        self.energy -= actual
+        self.drawn_wh += actual
+        return actual
 
     def charge(self) -> None:
         c = self.cfg
@@ -57,5 +67,7 @@ class Battery:
         self.energy = min(self.capacity, self.energy + c.charge_rate_w * self.dt_h)
         if self.energy >= self.capacity - 1e-6 and before < self.capacity:
             self.cycles += 1.0
-            # capacity fade with cycles (battery ageing)
+            # capacity fade with cycles (battery ageing); energy must be
+            # re-clamped to the FADED capacity or SoC exceeds 1.0.
             self.capacity = max(0.0, self.cfg.capacity_wh * (1.0 - self.cfg.degradation_per_cycle * self.cycles))
+            self.energy = min(self.energy, self.capacity)

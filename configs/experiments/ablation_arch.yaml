@@ -1,4 +1,12 @@
 # Ablation: architecture comparison (Fig. 20).
+#
+# Every variant overrides the model, so run_experiments.py REQUIRES a trained
+# checkpoint per variant, e.g.:
+#   python scripts/run_experiments.py --config configs/experiments/ablation_arch.yaml \
+#     --ckpt ppo=results/trained/mlp_s0/checkpoints/best.pt \
+#     --ckpt ppo_gnn=... --ckpt ppo_transformer=... --ckpt ppo_transformer_gnn=...
+# Without checkpoints the script refuses to run (it previously evaluated the
+# scripted heuristic under these labels, which invalidated the comparison).
 base: { env: { num_drones: 3, max_steps: 200 } }
 grid:
   ppo:              { model: { arch: mlp } }

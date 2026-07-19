@@ -1,30 +1,24 @@
 #!/bin/bash
+# Launch the science campaign's seeds in parallel (one process per seed).
+# Assumes the environment is already set up (see run_training.sh / TRAIN_ON_YOUR_GPU.md);
+# this script deliberately does NOT trigger the full setup-and-train launcher.
 set -e
 
-echo "=== Setting up environment ==="
-# Run the setup script once sequentially so pip doesn't crash on race conditions
-./run_training.sh --timesteps 1
+ARCH="${ARCH:-transformer_gnn}"
+TIMESTEPS="${TIMESTEPS:-3000000}"
+SEEDS=(${SEEDS:-0 1 2 3 4})
 
-echo "=== Starting Parallel Training (3 Seeds) ==="
-source .venv/bin/activate
+source .venv/bin/activate 2>/dev/null || true
 
-# Launch seeds 0, 1, and 2 in the background
-python scripts/train_and_report.py --config configs/training/mappo_easy.yaml --archs transformer_gnn --seeds 0 --timesteps 3000000 > seed0.log 2>&1 &
-PID0=$!
+echo "=== Parallel training: arch=$ARCH timesteps=$TIMESTEPS seeds=${SEEDS[*]} ==="
+PIDS=()
+for s in "${SEEDS[@]}"; do
+    python scripts/train_and_report.py --archs "$ARCH" --seeds "$s" \
+        --timesteps "$TIMESTEPS" > "seed${s}.log" 2>&1 &
+    PIDS+=($!)
+    echo "seed $s -> PID ${PIDS[-1]} (seed${s}.log)"
+done
 
-python scripts/train_and_report.py --config configs/training/mappo_easy.yaml --archs transformer_gnn --seeds 1 --timesteps 3000000 > seed1.log 2>&1 &
-PID1=$!
-
-python scripts/train_and_report.py --config configs/training/mappo_easy.yaml --archs transformer_gnn --seeds 2 --timesteps 3000000 > seed2.log 2>&1 &
-PID2=$!
-
-echo "All 3 seeds launched in background!"
-echo "Seed 0 PID: $PID0 -> logging to seed0.log"
-echo "Seed 1 PID: $PID1 -> logging to seed1.log"
-echo "Seed 2 PID: $PID2 -> logging to seed2.log"
-
-echo "Waiting for all runs to finish..."
-wait $PID0 $PID1 $PID2
-
-echo -e "\e[32m=== All 3 parallel runs completed! ===\e[0m"
-echo "Check results/trained for the outputs."
+echo "Waiting for ${#PIDS[@]} runs..."
+wait "${PIDS[@]}"
+echo "=== All runs completed — see results/trained ==="

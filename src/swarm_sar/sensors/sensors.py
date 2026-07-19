@@ -12,15 +12,21 @@ from swarm_sar.config import SensorConfig
 
 
 class GPS:
-    def __init__(self, cfg: SensorConfig, rng: np.random.Generator):
+    def __init__(self, cfg: SensorConfig, rng: np.random.Generator,
+                 cell_size_m: float = 1.0):
         self.cfg = cfg; self.rng = rng
+        self.cell_size_m = max(1e-6, cell_size_m)
         self._drift = np.zeros(2)
 
     def read(self, true_pos, ok: bool) -> np.ndarray:
+        # Positions are in grid cells; noise/drift configs are metres, so they
+        # are converted here (the single metre→cell boundary for GPS).
+        cs = self.cell_size_m
         if not ok:                                   # GPS failure -> stale/huge error
-            return true_pos + self.rng.normal(0, 8.0, size=2)
-        self._drift += self.rng.normal(0, self.cfg.gps_drift_m_per_s, size=2)
-        return np.asarray(true_pos, float) + self.rng.normal(0, self.cfg.gps_noise_std_m, size=2) + self._drift
+            return true_pos + self.rng.normal(0, 8.0 / cs, size=2)
+        self._drift += self.rng.normal(0, self.cfg.gps_drift_m_per_s / cs, size=2)
+        return (np.asarray(true_pos, float)
+                + self.rng.normal(0, self.cfg.gps_noise_std_m / cs, size=2) + self._drift)
 
 
 class IMU:
@@ -84,8 +90,9 @@ class Lidar:
 
 
 class SensorSuite:
-    def __init__(self, cfg: SensorConfig, rng: np.random.Generator):
-        self.gps = GPS(cfg, rng)
+    def __init__(self, cfg: SensorConfig, rng: np.random.Generator,
+                 cell_size_m: float = 1.0):
+        self.gps = GPS(cfg, rng, cell_size_m=cell_size_m)
         self.imu = IMU(cfg, rng)
         self.camera = Camera(cfg, rng)
         self.lidar = Lidar(cfg, rng)

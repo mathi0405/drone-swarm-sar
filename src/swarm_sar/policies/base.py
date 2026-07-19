@@ -144,13 +144,27 @@ def build_policy(model_cfg, spec: PolicySpec, centralized: bool = True):
                        model_cfg.hidden_dim, centralized=centralized)
 
 
-def load_checkpoint(path: str):
+def load_checkpoint(path: str, agent: int = 0):
+    """Load a trained ActorCritic from a checkpoint.
+
+    Handles both shared checkpoints (``state_dict``) and independent-policy
+    checkpoints (``state_dict_{i}``; pick with ``agent``), and rebuilds the
+    critic in the same centralized/decentralized mode it was trained in.
+    Loading is STRICT: a key mismatch means the checkpoint and code disagree
+    about the architecture, which must fail loudly, not silently skip weights.
+    """
     _require_torch()
     from swarm_sar.config import ModelConfig
     torch.serialization.add_safe_globals([ModelConfig])
     ckpt = torch.load(path, map_location="cpu", weights_only=False)
     spec = PolicySpec(**ckpt["spec"])
-    model = build_policy(ckpt["model_cfg"], spec)
-    model.load_state_dict(ckpt["state_dict"], strict=False)
+    centralized = bool(ckpt.get("centralized_critic", True))
+    model = build_policy(ckpt["model_cfg"], spec, centralized=centralized)
+    sd = ckpt.get("state_dict", ckpt.get(f"state_dict_{agent}"))
+    if sd is None:
+        raise KeyError(
+            f"{path} has neither 'state_dict' nor 'state_dict_{agent}' — "
+            "not a Swarm-SAR checkpoint, or an out-of-range agent index.")
+    model.load_state_dict(sd)
     model.eval()
     return model

@@ -241,6 +241,15 @@ class MAPPOTrainer:
     def __init__(self, cfg: Config, resume: str = None):
         if not HAS_TORCH:
             raise ImportError("PyTorch required for MAPPO. `pip install -e '.[rl]'`")
+        if (cfg.train.policy_sharing == "independent"
+                and cfg.model.arch in ("gnn", "transformer_gnn")):
+            # The independent-policy path never passes agent graphs (each
+            # policy acts on its own obs), so a GNN would silently train with
+            # no message passing at all.  Refuse instead of degrading.
+            raise ValueError(
+                f"arch '{cfg.model.arch}' requires policy_sharing: shared — "
+                "independent policies receive no inter-agent graph, which "
+                "silently disables GNN communication.")
         self.cfg = cfg
         self.device = ("cuda" if (cfg.train.device in ("auto", "cuda")
                                   and torch.cuda.is_available()) else "cpu")
@@ -325,7 +334,7 @@ class MAPPOTrainer:
             * size
             for a in self.env.possible_agents
         ], dtype=np.float32)
-        return comm_adjacency(pos, self.cfg.env.comm.range_m,
+        return comm_adjacency(pos, self.cfg.env.comm.range_m / self.cfg.env.world.cell_size_m,
                               packet_loss=self.cfg.env.comm.packet_loss,
                               rng=self._np_rng)
 
@@ -662,10 +671,11 @@ class MAPPOTrainer:
                     entropy_coef * ent +
                     imitation_coef * imitation_loss
                 )
-                if c.comm_gate_coef > 0:
+                gate_coef = c.comm_gate_coef * getattr(self, "_gate_scale", 1.0)
+                if gate_coef > 0:
                     gate_cost = self._comm_gate_cost(policy)
                     if gate_cost is not None:
-                        loss = loss + c.comm_gate_coef * gate_cost
+                        loss = loss + gate_coef * gate_cost
                 self.opt.zero_grad(); loss.backward()
                 nn.utils.clip_grad_norm_([p for pol in self.policies for p in pol.parameters()],
                                          c.grad_clip)
@@ -919,7 +929,7 @@ class MAPPOTrainer:
                     pos = np.array([
                         obs[a][-frame_dim:-frame_dim + 2] * env.cfg.world.size
                         for a in env.possible_agents], dtype=np.float32)
-                    adj = comm_adjacency(pos, env.cfg.comm.range_m,
+                    adj = comm_adjacency(pos, env.cfg.comm.range_m / env.cfg.world.cell_size_m,
                                          packet_loss=env.cfg.comm.packet_loss,
                                          rng=eval_rng)
                     graph = self._graph_tensor(adj, policy)
@@ -958,6 +968,11 @@ class MAPPOTrainer:
             self._apply_curriculum(it, iters)
 
             progress = it / max(1, iters - 1)
+            # Comm-gate cost anneals IN: silence must not be taxed before the
+            # value of talking has been discovered (pilot runs collapsed ~1/4
+            # of seeds into permanent radio silence with a step-0 tax).
+            warmup = max(1e-6, c.comm_gate_warmup_frac)
+            self._gate_scale = min(1.0, progress / warmup) if c.comm_gate_warmup_frac > 0 else 1.0
             # Linear entropy decay
             current_entropy_coef = max(0.001, c.entropy_coef * (1.0 - progress))
             # Linear learning-rate annealing with a floor
@@ -1023,7 +1038,12 @@ class MAPPOTrainer:
 
     def save(self, path):
         path = Path(path); path.parent.mkdir(parents=True, exist_ok=True)
-        data = {"model_cfg": self.cfg.model, "spec": self.spec.__dict__}
+        data = {"model_cfg": self.cfg.model, "spec": self.spec.__dict__,
+                # Training-mode metadata: without it, checkpoints from
+                # independent or decentralized-critic runs could not be
+                # reconstructed correctly at evaluation time.
+                "policy_sharing": self.cfg.train.policy_sharing,
+                "centralized_critic": bool(self.cfg.train.centralized_critic)}
         if self.cfg.train.policy_sharing == "independent":
             for i, p in enumerate(self.policies):
                 data[f"state_dict_{i}"] = p.state_dict()

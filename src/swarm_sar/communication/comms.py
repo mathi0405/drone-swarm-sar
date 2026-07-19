@@ -60,10 +60,14 @@ def should_event_broadcast(event: str, severity: float = 1.0,
 
 
 class CommNetwork:
-    def __init__(self, cfg: CommConfig, n_agents: int, rng: np.random.Generator):
+    def __init__(self, cfg: CommConfig, n_agents: int, rng: np.random.Generator,
+                 cell_size_m: float = 1.0):
         self.cfg = cfg
         self.rng = rng
         self.n = n_agents
+        # Drone positions are grid cells; the radio range is configured in
+        # metres.  Convert once so every range check uses the same cell radius.
+        self.range_cells = cfg.range_m / max(1e-6, cell_size_m)
         # queue of (deliver_step, -priority, sequence, receiver, Message)
         self._inflight: list[tuple[int, int, int, int, Message]] = []
         self.delivered: dict[int, list[Message]] = {i: [] for i in range(n_agents)}
@@ -99,7 +103,7 @@ class CommNetwork:
             if r == sender or not alive.get(r, False) or not comm_ok.get(r, True):
                 continue
             d = np.linalg.norm(sp - positions[r])
-            if d <= self.cfg.range_m:
+            if d <= self.range_cells:
                 self.edges_this_step.append((sender, r))
                 self.n_sent += 1
                 dynamic_packet_loss = self.cfg.packet_loss + (self.congestion * 0.5)
@@ -168,7 +172,7 @@ class CommNetwork:
                 for other in range(self.n):
                     if other in seen or not alive.get(other, False) or not comm_ok.get(other, True):
                         continue
-                    if np.linalg.norm(positions[cur] - positions[other]) <= self.cfg.range_m:
+                    if np.linalg.norm(positions[cur] - positions[other]) <= self.range_cells:
                         seen.add(other)
                         stack.append(other)
             comps.append(comp)

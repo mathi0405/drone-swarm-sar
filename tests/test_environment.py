@@ -52,10 +52,12 @@ def test_reset_spawns_drones_with_safe_separation():
     for seed in range(10):
         env = SARSwarmEnv(cfg, seed=seed)
         env.reset(seed=seed)
+        # Positions are cells; the separation config is metres.
+        sep_cells = cfg.min_spawn_separation_m / cfg.world.cell_size_m
         for i in range(env.n):
             for j in range(i + 1, env.n):
                 dist = np.linalg.norm(env.drones[i].state.pos - env.drones[j].state.pos)
-                assert dist >= cfg.min_spawn_separation_m
+                assert dist >= sep_cells
 
 
 def test_separate_comm_action_allows_move_and_broadcast():
@@ -99,9 +101,12 @@ def test_action_mask_can_disable_non_mission_actions():
 def test_action_mask_predicts_full_speed_collision():
     env = SARSwarmEnv(EnvConfig(num_drones=2, max_steps=3, wind_max_mps=0.0), seed=0)
     env.reset(seed=0)
+    # Full-speed displacement is max_speed_mps / cell_size_m = 3 CELLS, so a
+    # peer 1 cell beyond the predicted endpoint sits inside the safety margin
+    # (3 m = 1.5 cells) of the swept segment.
     env.drones[0].state.pos = np.array([10.0, 10.0])
     env.drones[0].state.vel = np.zeros(2)
-    env.drones[1].state.pos = np.array([16.0, 10.0])
+    env.drones[1].state.pos = np.array([14.0, 10.0])
     env.drones[1].state.vel = np.zeros(2)
 
     mask = env.action_mask(0)

@@ -46,9 +46,9 @@ These come directly from the shipped code (`scripts/run_demo.py`, `scripts/run_e
 | **Lossy comms** (30 m, 30% loss) | 80% | med | med | **69.5 ± 19.1** |
 | **Full comms** (30 m, 5% loss) | 80% | high | low | **71.8 ± 20.3** |
 
-> **Finding.** Communication nearly **triples** the Swarm Intelligence Score (25 → 72) even though raw coverage is similar — coordination, not exploration, is the bottleneck. Without comms the swarm actually covers *slightly more* area (drones don't cluster) but rescues far fewer victims and collides more. This is exactly the cooperative-intelligence effect the project sets out to measure.
+> **Finding.** Communication nearly **triples** the Swarm Intelligence Score (31.6 → 87.0, scripted heuristic controller, 5 seeds) even though raw coverage is similar — coordination, not exploration, is the bottleneck. Without comms the swarm still covers most of the area but rescues far fewer victims and collides more. This is exactly the cooperative-intelligence effect the project sets out to measure. (Re-measured after the decentralization fixes: peer intent now travels only through delivered messages, so the ablation is honest about what communication buys.)
 
-Single best demo episode (heuristic controller): **8/8 victims rescued, 89% coverage, SIS 90.4**. Measured decision latency for the *neural* policy: **≈24 ms/step (~41 Hz) on laptop CPU** (`scripts/evaluate.py`, `inference` block — hardware-dependent; re-measure on your target platform).
+Single best demo episode (heuristic controller): **8/8 victims rescued, 72% coverage, SIS 83.9**; benchmark IQM across the 20 frozen maps: **SIS 85.5 [76.2, 89.4]**. Measured decision latency for the *neural* policy: **≈7 ms/step (~145 Hz) on laptop CPU** (`scripts/evaluate.py`, `inference` block — hardware-dependent; re-measure on your target platform).
 
 
 

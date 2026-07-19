@@ -140,6 +140,36 @@ class SARWorld:
             return False
         return self.grid[int(y), int(x)] not in _BLOCKS_FLIGHT
 
+    def m_to_cells(self, metres: float) -> float:
+        """Convert a metric distance to grid cells (single source of truth)."""
+        return metres / max(1e-6, self.cfg.cell_size_m)
+
+    def cells_to_m(self, cells: float) -> float:
+        return cells * self.cfg.cell_size_m
+
+    def clip_segment(self, start, end):
+        """Furthest point along start→end reachable without entering a
+        non-flyable cell.
+
+        Walks the segment in ≤0.5-cell increments so a fast move cannot
+        tunnel through an obstacle that lies strictly between its endpoints
+        (endpoint-only checks let drones pass through one-cell buildings).
+        """
+        start = np.asarray(start, dtype=float)
+        end = np.asarray(end, dtype=float)
+        delta = end - start
+        dist = float(np.linalg.norm(delta))
+        if dist < 1e-9:
+            return end if self.is_flyable(end[0], end[1]) else start
+        steps = max(1, int(np.ceil(dist / 0.5)))
+        prev = start
+        for k in range(1, steps + 1):
+            p = start + delta * (k / steps)
+            if not self.is_flyable(p[0], p[1]):
+                return prev
+            prev = p
+        return end
+
     def occludes(self, x: int, y: int) -> bool:
         return self.grid[int(y), int(x)] in _OCCLUDES
 

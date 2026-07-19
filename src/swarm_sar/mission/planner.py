@@ -121,7 +121,9 @@ class HeuristicSwarmController:
             target_vid = assign.get(i, -1)
             has_target = target_vid >= 0
             st = env.world.nearest_charging(d.kinematics.pos)
-            dist_to_charger = float(np.linalg.norm(d.kinematics.pos - st.pos)) if st is not None else None
+            # Positions are cells; the battery return model wants METRES.
+            dist_to_charger = (env.world.cells_to_m(float(np.linalg.norm(d.kinematics.pos - st.pos)))
+                               if st is not None else None)
             state = self.planners[i].update(d, has_target, dist_to_charger)
 
             if state in (MissionState.RETURN_CHARGE, MissionState.CHARGING):
@@ -135,7 +137,7 @@ class HeuristicSwarmController:
             elif state == MissionState.RESCUE and has_target:
                 vpos = env.world.victims[target_vid].pos
                 target_point = vpos
-                if np.linalg.norm(d.kinematics.pos - vpos) <= env.cfg.collision_radius_m + 1.0:
+                if np.linalg.norm(d.kinematics.pos - vpos) <= env.rescue_radius_c:
                     a = "hover"                       # dwell to rescue
                 else:
                     a = ACTIONS[_move_action_towards(d.kinematics.pos, vpos)]

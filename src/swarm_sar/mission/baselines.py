@@ -76,7 +76,7 @@ class FrontierController:
                     else _act_to(d.kinematics.pos, st.pos); continue
             if victims:  # go to nearest known victim
                 v = min(victims, key=lambda v: np.linalg.norm(d.kinematics.pos - v.pos))
-                if np.linalg.norm(d.kinematics.pos - v.pos) <= env.cfg.collision_radius_m + 1.0:
+                if np.linalg.norm(d.kinematics.pos - v.pos) <= env.rescue_radius_c:
                     acts[f"drone_{i}"] = ACTION_TO_IDX["hover"]; continue
                 acts[f"drone_{i}"] = _act_to(d.kinematics.pos, v.pos); continue
             # else frontier: nearest unexplored flyable cell (subsampled ring)
@@ -111,7 +111,7 @@ class GreedyTSPController(FrontierController):
             mine = assign.get(i, [])
             if mine:                          # nearest-neighbour next hop
                 v = min(mine, key=lambda v: np.linalg.norm(d.kinematics.pos - v.pos))
-                if np.linalg.norm(d.kinematics.pos - v.pos) <= env.cfg.collision_radius_m + 1.0:
+                if np.linalg.norm(d.kinematics.pos - v.pos) <= env.rescue_radius_c:
                     acts[f"drone_{i}"] = ACTION_TO_IDX["hover"]; continue
                 acts[f"drone_{i}"] = _act_to(d.kinematics.pos, v.pos)
             else:
@@ -175,7 +175,7 @@ class OracleController:
             # oracle "reveals" the victim so the env can rescue it on arrival
             v.detected = True; v._confirmations = max(v._confirmations, env.cfg.confirmations_required)
             acts[f"drone_{i}"] = ACTION_TO_IDX["hover"] if \
-                np.linalg.norm(d.kinematics.pos - v.pos) <= env.cfg.collision_radius_m + 1.0 \
+                np.linalg.norm(d.kinematics.pos - v.pos) <= env.rescue_radius_c \
                 else _act_to(d.kinematics.pos, v.pos)
         return acts
 

@@ -218,6 +218,10 @@ class TrainConfig(BaseModel):
     # Non-zero by default: bandwidth-constrained learned communication is the
     # thesis, so it must actually be trained under pressure.
     comm_gate_coef: float = 0.01
+    # The gate cost anneals IN from 0 over this fraction of training.  Taxing
+    # silence from step 0 collapsed ~1/4 of pilot seeds into permanent radio
+    # silence: the value of talking must be discovered before it is taxed.
+    comm_gate_warmup_frac: float = 0.2
     checkpoint_every: int = 100_000
     eval_every: int = 50_000
     # Episodes per in-training deterministic eval.  Best-checkpoint selection

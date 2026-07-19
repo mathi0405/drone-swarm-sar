@@ -117,28 +117,32 @@ class ObservationEngine:
             ]
 
             # Hazards, sensed only within the drone's (visibility-scaled) camera
-            # radius so partial observability is preserved.
-            rad = max(1, int(env.cfg.sensors.camera_range_m
-                             * getattr(env, "visibility", 1.0)
-                             / env.world.cfg.cell_size_m))
+            # radius so partial observability is preserved.  A failed camera is
+            # blind: it reports "no hazards seen" rather than ground truth.
             cx, cy = int(s.pos[0]), int(s.pos[1])
-            x0, x1 = max(0, cx - rad), min(S, cx + rad + 1)
-            y0, y1 = max(0, cy - rad), min(S, cy + rad + 1)
-            patch = env.world.grid[y0:y1, x0:x1]
-            fire_mask = patch == CellType.FIRE
-            smoke_mask = patch == CellType.SMOKE
-            fire_density = float(fire_mask.mean()) if patch.size else 0.0
-            smoke_density = float(smoke_mask.mean()) if patch.size else 0.0
-            fire_dist = smoke_dist = 1.0
-            if fire_mask.any():
-                ys, xs = np.nonzero(fire_mask)
-                dd = np.sqrt((xs + x0 - s.pos[0]) ** 2 + (ys + y0 - s.pos[1]) ** 2)
-                fire_dist = float(np.clip(dd.min() / rad, 0.0, 1.0))
-            if smoke_mask.any():
-                ys, xs = np.nonzero(smoke_mask)
-                dd = np.sqrt((xs + x0 - s.pos[0]) ** 2 + (ys + y0 - s.pos[1]) ** 2)
-                smoke_dist = float(np.clip(dd.min() / rad, 0.0, 1.0))
-            hazards = [fire_dist, smoke_dist, fire_density, smoke_density]
+            if not d.faults.camera_ok:
+                hazards = [1.0, 1.0, 0.0, 0.0]
+            else:
+                rad = max(1, int(env.cfg.sensors.camera_range_m
+                                 * getattr(env, "visibility", 1.0)
+                                 / env.world.cfg.cell_size_m))
+                x0, x1 = max(0, cx - rad), min(S, cx + rad + 1)
+                y0, y1 = max(0, cy - rad), min(S, cy + rad + 1)
+                patch = env.world.grid[y0:y1, x0:x1]
+                fire_mask = patch == CellType.FIRE
+                smoke_mask = patch == CellType.SMOKE
+                fire_density = float(fire_mask.mean()) if patch.size else 0.0
+                smoke_density = float(smoke_mask.mean()) if patch.size else 0.0
+                fire_dist = smoke_dist = 1.0
+                if fire_mask.any():
+                    ys, xs = np.nonzero(fire_mask)
+                    dd = np.sqrt((xs + x0 - s.pos[0]) ** 2 + (ys + y0 - s.pos[1]) ** 2)
+                    fire_dist = float(np.clip(dd.min() / rad, 0.0, 1.0))
+                if smoke_mask.any():
+                    ys, xs = np.nonzero(smoke_mask)
+                    dd = np.sqrt((xs + x0 - s.pos[0]) ** 2 + (ys + y0 - s.pos[1]) ** 2)
+                    smoke_dist = float(np.clip(dd.min() / rad, 0.0, 1.0))
+                hazards = [fire_dist, smoke_dist, fire_density, smoke_density]
 
             # Egocentric map patch: a P x P grid of sample points spanning the
             # camera footprint, three channels — occupancy (blocked cells; the
@@ -154,8 +158,12 @@ class ObservationEngine:
             in_map = ((gy_raw >= 0) & (gy_raw < S)) & ((gx_raw >= 0) & (gx_raw < S))
             gy = np.clip(gy_raw, 0, S - 1)
             gx = np.clip(gx_raw, 0, S - 1)
-            occupancy = np.where(in_map, env._blocked_mask[gy, gx], True)
             explored_patch = np.where(in_map, env.explored[i][gy, gx], False)
+            # Occupancy is fresh visual sensing; with a failed camera only
+            # cells this drone previously explored are readable (memory of
+            # mostly-static structure) — the rest read as unknown/blocked.
+            occ_visible = in_map if d.faults.camera_ok else (in_map & explored_patch)
+            occupancy = np.where(occ_visible, env._blocked_mask[gy, gx], True)
             belief_patch = np.where(in_map, env.victim_belief[i][gy, gx], 0.0)
             map_patch = np.concatenate([
                 occupancy.astype(np.float32).ravel(),
@@ -169,32 +177,34 @@ class ObservationEngine:
             lidar = (d.sensors.lidar.scan(s.pos, env.world, env._blocked_mask)
                      / lidar_cells).astype(np.float32)
 
-            # Team info (peers within comm range, nearest first)
-            crange = env.cfg.comm.range_m
+            # Team info (peers within comm range, nearest first).  Relative
+            # POSITION is physical proximity sensing (needed for separation);
+            # intent (target/assignment/mode) comes ONLY from messages this
+            # drone actually received — reading it from world state teleported
+            # every assignment past packet loss, latency and the broadcast
+            # action, making learned communication nearly worthless.
+            cs = max(1e-6, env.world.cfg.cell_size_m)
+            crange = env.cfg.comm.range_m / cs
             others = sorted([j for j in range(env.n)
                              if j != i and env.drones[j].mission.alive and env.drones[j].faults.comm_ok
                              and np.linalg.norm(env.drones[j].kinematics.pos - s.pos) <= crange],
                             key=lambda j: np.linalg.norm(env.drones[j].kinematics.pos - s.pos))
+            peer_intent = getattr(env, "_peer_intent", None)
             peers = []
             for j in others[:k]:
-                noise = env.rng.normal(0, env.cfg.sensors.gps_noise_std_m, size=2)
+                noise = env.rng.normal(0, env.cfg.sensors.gps_noise_std_m / cs, size=2)
                 rel = (env.drones[j].kinematics.pos + noise - s.pos) / S
 
-                # Team intent: where peer j is headed and why (shared over the
-                # radio link, hence only for in-range peers).
-                assigned = next((v for v in env.world.victims
-                                 if v.assigned_drone == j and not v.rescued), None)
                 target_x = target_y = 0.0
                 has_assignment = 0.0
-                if assigned is not None:
-                    t_rel = (assigned.pos - s.pos) / S
-                    target_x, target_y = float(t_rel[0]), float(t_rel[1])
-                    has_assignment = 1.0
-                mode = 0.0                               # 0 = explore
-                if has_assignment:
-                    mode = 1.0                           # 1 = rescue
-                if env.drones[j].mission.returning:
-                    mode = 2.0                           # 2 = return-to-charge
+                mode = 0.0                               # 0 = explore (default)
+                intent = peer_intent[i].get(j) if peer_intent is not None else None
+                if intent is not None:
+                    if intent.get("target") is not None:
+                        t_rel = (np.asarray(intent["target"], dtype=float) - s.pos) / S
+                        target_x, target_y = float(t_rel[0]), float(t_rel[1])
+                    has_assignment = float(intent.get("has_assignment", 0.0))
+                    mode = float(intent.get("mode", 0.0))
 
                 peers += [rel[0], rel[1], target_x, target_y, has_assignment, mode]
             peers += [0.0] * (6 * k - len(peers))

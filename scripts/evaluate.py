@@ -37,7 +37,10 @@ def main():
         res = ev.evaluate(args.seeds)
         # >= 10 seeds: below that the nominal/faulted SIS ratio is noise.
         rob = ev.robustness(args.seeds[:10])
-        gen = ev.generalization(args.seeds[: max(1, len(args.seeds) // 2)], args.seeds[len(args.seeds) // 2:])
+        # "seen" = maps from the TRAINING seed range (0..9); "unseen" = the
+        # held-out benchmark seeds.  Splitting the held-out set in half
+        # produced two unseen partitions mislabeled as seen-vs-unseen.
+        gen = ev.generalization(list(range(10)), args.seeds[:10])
         inf = ev.inference_time()
 
         print("=== Evaluation (mean +/- std over seeds) ===")

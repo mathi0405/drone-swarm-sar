@@ -114,8 +114,10 @@ class Drone:
         self.faults = FaultState()
         self.mission = MissionState()
         self.battery = Battery(cfg.battery, dt=cfg.step_seconds)
-        self.sensors = SensorSuite(cfg.sensors, rng)
-        self.dyn = PointMassDynamics(cfg.max_speed_mps, cfg.motion_noise_std)
+        self.sensors = SensorSuite(cfg.sensors, rng,
+                                   cell_size_m=cfg.world.cell_size_m)
+        self.dyn = PointMassDynamics(cfg.max_speed_mps, cfg.motion_noise_std,
+                                     cell_size_m=cfg.world.cell_size_m)
         self.last_action = 0
         self.idle_counter = 0
         self.comm_count = 0              # broadcasts this episode
@@ -133,8 +135,7 @@ class Drone:
         """Record a broadcast, optionally charging only the radio energy."""
         self.comm_count += 1
         if extra_energy:
-            used = self.cfg.battery.comm_draw_w * self.battery.dt_h
-            self.battery.energy = max(0.0, self.battery.energy - used)
+            self.battery.drain(self.cfg.battery.comm_draw_w * self.battery.dt_h)
 
     def apply(self, action: int, world, wind: np.ndarray, comm: bool = False) -> dict:
         """Apply a discrete action; return an info dict of what happened."""
@@ -171,12 +172,17 @@ class Drone:
 
         if name in _MOVE:
             new_pos, new_vel = self.dyn.step(k.pos, k.vel, accel, wind, self.rng, speed_scale)
-            # reject moves into non-flyable cells (collision handled by env)
-            if world.is_flyable(new_pos[0], new_pos[1]):
-                k.pos, k.vel = new_pos, new_vel
-            else:
+            # Enforce the SWEPT path, not just the endpoint: the move stops at
+            # the last flyable point before any obstacle on the segment, so a
+            # multi-cell step (or the RTB autopilot) can never tunnel through
+            # a building.  Collision *penalties* are handled by the env.
+            reached = world.clip_segment(k.pos, new_pos)
+            if np.linalg.norm(reached - new_pos) > 1e-9:
+                k.pos = reached
                 k.vel = np.zeros(2)
                 info["blocked"] = True
+            else:
+                k.pos, k.vel = new_pos, new_vel
         else:
             k.vel = np.zeros(2)
 
