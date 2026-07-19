@@ -208,6 +208,10 @@ class TrainConfig(BaseModel):
     centralized_critic: bool = True
     # Linear learning-rate annealing floor (fraction of the initial lr).
     lr_anneal_floor: float = 0.05
+    # Linear LR warm-up over this fraction of training before the anneal.
+    # Deep transformer stacks under PPO need it; recurrent/MLP encoders are
+    # indifferent to it, so it is safe as a global default.
+    lr_warmup_frac: float = 0.05
     # The imitation coefficient decays linearly to zero over this fraction of
     # training (kickstarter-style), so PPO is not permanently tethered to the
     # heuristic it should eventually surpass.

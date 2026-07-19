@@ -75,9 +75,13 @@ class TransformerEncoder(nn.Module):
         # doubles as a per-slot entity embedding on top of the type embedding.
         self.pos = nn.Parameter(torch.zeros(1, n_pos, hidden))
         nn.init.normal_(self.pos, std=0.02)
+        # Pre-LN (norm_first): post-LN transformers under PPO at 3e-4 with no
+        # warmup are a textbook instability — the 3M transformer_gnn run
+        # unlearned its BC prior (stage rescue 0.69 -> 0.35) with exactly that
+        # configuration.  Pre-LN keeps residual gradients well-scaled at depth.
         layer = nn.TransformerEncoderLayer(
             d_model=hidden, nhead=cfg.n_heads, dim_feedforward=hidden * 2,
-            batch_first=True, activation="gelu")
+            batch_first=True, activation="gelu", norm_first=True)
         self.encoder = nn.TransformerEncoder(layer, num_layers=cfg.n_layers)
         self.out_dim = hidden
         self.last_attn = None

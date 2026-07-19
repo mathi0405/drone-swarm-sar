@@ -975,8 +975,14 @@ class MAPPOTrainer:
             self._gate_scale = min(1.0, progress / warmup) if c.comm_gate_warmup_frac > 0 else 1.0
             # Linear entropy decay
             current_entropy_coef = max(0.001, c.entropy_coef * (1.0 - progress))
-            # Linear learning-rate annealing with a floor
-            current_lr = c.lr * max(c.lr_anneal_floor, 1.0 - progress)
+            # Linear LR warm-up, then linear annealing with a floor.  Without
+            # the warm-up, deep transformer stacks take full-size Adam steps
+            # on a fresh (BC-only) value function and shred the imitation
+            # prior within the first few hundred iterations.
+            if c.lr_warmup_frac > 0 and progress < c.lr_warmup_frac:
+                current_lr = c.lr * max(0.02, progress / c.lr_warmup_frac)
+            else:
+                current_lr = c.lr * max(c.lr_anneal_floor, 1.0 - progress)
             for group in self.opt.param_groups:
                 group["lr"] = current_lr
             # Kickstarter-style imitation annealing: the pull toward the
