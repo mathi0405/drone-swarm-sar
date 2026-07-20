@@ -129,3 +129,15 @@ def test_legacy_log_falls_back_to_activity():
     del s["coverage_uniqueness"]
     m = episode_metrics(_FakeLog(s), grid_size=24)
     assert m["communication_utility"] == 0.35
+
+
+def test_sanitize_json_strips_non_finite():
+    import json
+
+    from swarm_sar.evaluation.stats import sanitize_json
+    dirty = {"a": float("nan"), "b": [1.0, float("inf")], "c": {"d": np.float64("nan")},
+             "e": np.int64(3), "ok": 0.5}
+    clean = sanitize_json(dirty)
+    text = json.dumps(clean, allow_nan=False)      # raises if any NaN survives
+    assert json.loads(text) == {"a": None, "b": [1.0, None], "c": {"d": None},
+                                "e": 3, "ok": 0.5}

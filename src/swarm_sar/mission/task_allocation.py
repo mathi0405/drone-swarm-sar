@@ -26,7 +26,8 @@ def cost_matrix(drone_pos: np.ndarray, victim_pos: np.ndarray,
                 charger_pos: np.ndarray | None = None,
                 min_battery_for_task: float = 0.18) -> np.ndarray:
     """(n_drones x n_victims) travel-cost matrix, optionally battery-weighted."""
-    d = np.linalg.norm(drone_pos[:, None, :] - victim_pos[None, :, :], axis=-1)
+    dist = np.linalg.norm(drone_pos[:, None, :] - victim_pos[None, :, :], axis=-1)
+    d = dist
     if battery is not None:
         battery = np.asarray(battery, dtype=float)
         d = d / np.clip(battery[:, None], 0.05, 1.0)   # low battery -> higher cost
@@ -38,7 +39,7 @@ def cost_matrix(drone_pos: np.ndarray, victim_pos: np.ndarray,
                 np.linalg.norm(drone_pos[:, None, :] - chargers[None, :, :], axis=-1),
                 axis=1,
             )
-            rescue = np.linalg.norm(victim_pos[None, :, :] - drone_pos[:, None, :], axis=-1)
+            rescue = dist
             return_leg = np.min(
                 np.linalg.norm(victim_pos[:, None, :] - chargers[None, :, :], axis=-1),
                 axis=1,

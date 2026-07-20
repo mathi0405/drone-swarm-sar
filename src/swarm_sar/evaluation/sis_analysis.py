@@ -21,7 +21,12 @@ def sis_components(metrics: dict[str, float], n_victims: int = 8,
         "coverage": float(np.clip(metrics["coverage"], 0, 1)),
         "rescue": float(np.clip(metrics["victims_rescued"] / max(1, n_victims), 0, 1)),
         "energy": float(np.clip(1 - metrics["energy_wh"] / energy_budget, 0, 1)),
-        "communication": float(np.clip(metrics["communication_efficiency"], 0, 1)),
+        # The SIS communication dimension is UTILITY (assisted rescues +
+        # coverage uniqueness), not message activity; fall back to the old
+        # activity signal only for metrics dicts predating the change.
+        "communication": float(np.clip(
+            metrics.get("communication_utility",
+                        metrics["communication_efficiency"]), 0, 1)),
         "safety": float(np.clip(1 - metrics["collision_rate"] / COLLISION_RATE_CAP, 0, 1)),
     }
 

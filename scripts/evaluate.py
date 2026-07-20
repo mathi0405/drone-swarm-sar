@@ -11,7 +11,7 @@ import numpy as np
 
 from swarm_sar.config import load_config
 from swarm_sar.evaluation.evaluator import Evaluator
-from swarm_sar.evaluation.stats import bootstrap_ci, iqm
+from swarm_sar.evaluation.stats import bootstrap_ci, iqm, sanitize_json
 from swarm_sar.training.rollout import load_neural_actor
 
 
@@ -62,7 +62,8 @@ def main():
 
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     with open(args.out, "w") as f:
-        json.dump(report, f, indent=2)
+        # Strict JSON: the robustness guard's deliberate NaN becomes null.
+        json.dump(sanitize_json(report), f, indent=2, allow_nan=False)
     print(f"\n[OK] saved {args.out}")
 
 

@@ -70,6 +70,27 @@ def probability_of_improvement(a: Sequence[float], b: Sequence[float]) -> float:
     return float((a[:, None] > b[None, :]).mean())
 
 
+def sanitize_json(obj):
+    """Recursively replace non-finite floats with None for STRICT-JSON dumps.
+
+    ``json.dump`` happily writes literal ``NaN``/``Infinity`` tokens (e.g. the
+    deliberate NaN from ``Evaluator.robustness`` when the nominal baseline is
+    degenerate), which jq / JavaScript / strict parsers reject.  Python-side
+    semantics keep the NaN; serialization maps it to null.
+    """
+    if isinstance(obj, dict):
+        return {k: sanitize_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [sanitize_json(v) for v in obj]
+    if isinstance(obj, float) and not np.isfinite(obj):
+        return None
+    if isinstance(obj, np.floating):
+        return float(obj) if np.isfinite(obj) else None
+    if isinstance(obj, np.integer):
+        return int(obj)
+    return obj
+
+
 def summarize(scores: Sequence[float]) -> dict[str, float]:
     """IQM + 95% bootstrap CI + median + mean for a 1-D sample."""
     lo, hi = bootstrap_ci(scores)

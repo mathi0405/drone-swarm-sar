@@ -115,7 +115,12 @@ def main() -> None:
     ap.add_argument("--packet-loss", type=float, nargs="+", default=PACKET_LOSS_SWEEP)
     ap.add_argument("--fault-scale", type=float, default=10.0,
                     help="multiplier on nominal per-step fault probabilities")
-    ap.add_argument("--n-maps", type=int, default=None, help="subset maps (quick runs)")
+    def _positive(v):
+        n = int(v)
+        if n < 1:
+            raise argparse.ArgumentTypeError("--n-maps must be >= 1")
+        return n
+    ap.add_argument("--n-maps", type=_positive, default=None, help="subset maps (quick runs)")
     ap.add_argument("--out", default="results/stress")
     args = ap.parse_args()
 

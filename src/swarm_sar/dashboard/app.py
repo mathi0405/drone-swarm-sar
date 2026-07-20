@@ -185,7 +185,7 @@ def main():
             c[0].metric("Coverage", f"{mets['coverage']*100:.0f}%")
             c[1].metric("Rescued", int(mets['victims_rescued']))
             c[2].metric("Collisions/step", f"{mets['collision_rate']:.3f}")
-            c[3].metric("Comm eff.", f"{mets['communication_efficiency']*100:.0f}%")
+            c[3].metric("Comm utility", f"{mets.get('communication_utility', mets['communication_efficiency'])*100:.0f}%")
             c[4].metric("Energy", f"{mets['energy_wh']:.0f} Wh")
             c[5].metric("SIS", f"{mets['swarm_intelligence_score']:.1f}")
             left, right = st.columns([3, 2])
