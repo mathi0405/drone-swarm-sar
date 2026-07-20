@@ -62,12 +62,32 @@ def episode_metrics(log, energy_budget: float | None = None, grid_size: int = 64
     coverage = s["coverage"]
     victims_rescued = s["victims_rescued"]
     rescue_ratio = victims_rescued / n_v
+    # Diagnostic only (message ACTIVITY): delivered / sent.
     comm_eff = float(np.clip(s["delivery_ratio"], 0, 1))
+
+    # SIS communication component (message UTILITY).  The 3M campaign showed
+    # delivery_ratio rewards chattiness, not competence: in BOTH architectures
+    # the silent seed rescued the most victims yet scored worst on SIS.
+    # Utility instead combines two outcome-linked signals:
+    #   - assisted-rescue fraction: rescues by a drone whose first knowledge
+    #     of the victim arrived over the radio (the channel CAUSED the rescue)
+    #   - coverage uniqueness: how non-redundant the per-drone search
+    #     footprints are (coordination, however it was achieved)
+    # A silent-but-well-partitioned swarm scores ~0.5 rather than 0; a swarm
+    # whose messages actually hand off rescues scores higher; spam buys
+    # nothing.  Logs from before this field default conservatively to the old
+    # activity signal so historical results remain computable.
+    if "comm_assisted_rescues" in s:
+        assisted_frac = s["comm_assisted_rescues"] / max(1, victims_rescued)
+        comm_utility = float(np.clip(
+            0.5 * assisted_frac + 0.5 * s.get("coverage_uniqueness", 0.0), 0, 1))
+    else:
+        comm_utility = comm_eff
 
     completion_score = (
         0.40 * coverage +
         0.40 * rescue_ratio +
-        0.20 * comm_eff
+        0.20 * comm_utility
     )
 
     # mission_success uses the environment's single definition (all victims
@@ -110,13 +130,16 @@ def episode_metrics(log, energy_budget: float | None = None, grid_size: int = 64
         "collision_rate": float(collision_rate),
         "energy_wh": float(energy),
         "communication_efficiency": comm_eff,
+        "communication_utility": float(comm_utility),
+        "comm_assisted_rescues": float(s.get("comm_assisted_rescues", 0)),
+        "coverage_uniqueness": float(s.get("coverage_uniqueness", 0.0)),
         "exploration_entropy": expl_entropy,
         "robustness": robustness,
         "swarm_intelligence_score": swarm_intelligence_score({
             "coverage": coverage,
             "rescue": victims_rescued / n_v,
             "energy": np.clip(1 - energy / energy_budget, 0, 1),
-            "communication": comm_eff,
+            "communication": comm_utility,
             "safety": np.clip(1 - collision_rate / COLLISION_RATE_CAP, 0, 1),
         }),
     }

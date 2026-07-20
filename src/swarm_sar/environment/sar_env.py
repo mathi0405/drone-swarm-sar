@@ -180,6 +180,13 @@ class SARSwarmEnv:
         # world state teleported every assignment through packet loss).
         self._victims_known: list[set] = [set() for _ in range(self.n)]
         self._peer_intent: list[dict[int, dict]] = [{} for _ in range(self.n)]
+        # Communication-utility tracking: victim idx -> the drones whose FIRST
+        # knowledge of that victim arrived via a delivered message (as opposed
+        # to their own camera).  A rescue by such a drone is a rescue the
+        # radio channel caused — the outcome-linked signal the SIS
+        # communication component measures (message *activity* rewarded
+        # chattiness over competence; see docs in evaluation/metrics.py).
+        self._comm_informed: dict[int, set] = {}
         self.allocator = TaskAllocator(self.cfg.task_allocation_strategy, self.rng)
         # Event-based safety tracking: contact pairs currently touching (so
         # collisions penalize the ONSET only) and who was in a hazard cell
@@ -805,6 +812,9 @@ class SARSwarmEnv:
             for (_vidx, pos) in m.payload.get("victims", []):
                 x, y = int(pos[0]), int(pos[1])
                 self.victim_belief[i][y, x] = max(self.victim_belief[i][y, x], 0.9)
+                if _vidx not in self._victims_known[i]:
+                    # First knowledge of this victim came over the radio.
+                    self._comm_informed.setdefault(_vidx, set()).add(i)
                 self._victims_known[i].add(_vidx)
             for y, x in m.payload.get("explored_cells", []):
                 if 0 <= y < self.world.size and 0 <= x < self.world.size:
@@ -1015,6 +1025,17 @@ class SARSwarmEnv:
             "comm_sent": self.comm.n_sent,
             "comm_delivered": self.comm.n_delivered,
             "delivery_ratio": self.comm.delivery_ratio,
+            # Rescues performed by a drone whose first knowledge of the victim
+            # arrived via a delivered message — the channel's causal
+            # contribution to mission outcome.
+            "comm_assisted_rescues": int(sum(
+                1 for v in vic
+                if v.rescued and v.rescued_by in self._comm_informed.get(v.idx, set()))),
+            # Implicit-coordination signal: how non-redundant the per-drone
+            # explored footprints are.  1.0 = perfectly partitioned search,
+            # 0.0 = everyone re-explored the same cells (ratio at the 1/n
+            # all-identical floor).
+            "coverage_uniqueness": self._coverage_uniqueness(),
             "faults": self.faults.summary(),
             "environment_events": list(self.environment_events),
             # Cumulative energy CONSUMED (recharging must not launder it).
@@ -1022,6 +1043,20 @@ class SARSwarmEnv:
             "energy_budget_wh": float(sum(d.battery.cfg.capacity_wh for d in self.drones)),
             "success": bool(total_victims > 0 and rescued_count == total_victims),
         }
+
+    def _coverage_uniqueness(self) -> float:
+        """Normalized non-overlap of per-drone explored areas, in [0, 1].
+
+        ratio = |union| / sum(|individual|) lives in [1/n, 1]; rescaled so a
+        swarm whose members all swept identical ground scores 0 and a
+        perfectly partitioned search scores 1.
+        """
+        indiv = sum(int(e.sum()) for e in self.explored)
+        if indiv <= 0:
+            return 0.0
+        ratio = float(self.global_explored.sum()) / indiv
+        floor = 1.0 / max(1, self.n)
+        return float(np.clip((ratio - floor) / max(1e-9, 1.0 - floor), 0.0, 1.0))
 
     def _apply_weather_profile(self) -> None:
         if not self.cfg.world.weather_enabled:
