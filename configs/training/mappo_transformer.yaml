@@ -20,6 +20,9 @@ train:
   comm_gate_coef: 0.01
   comm_gate_warmup_frac: 0.2
   eval_episodes: 20
+  # 20-episode evals are expensive for transformer inference on CPU; 30 eval
+  # points across 3M still ranks checkpoints cleanly.
+  eval_every: 100000
   total_timesteps: 3000000
   lr: 0.0003
   lr_warmup_frac: 0.05
