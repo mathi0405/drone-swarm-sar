@@ -73,7 +73,7 @@
     <tr><td>Full comms (30&nbsp;m, 5% loss)</td><td>80%</td><td>low</td><td class="hi">71.8 &plusmn; 20.3</td></tr>
   </table>
   <div style="height:16px"></div>
-  <div class="note"><b>Finding.</b> Communication nearly <b>triples</b> the Swarm Intelligence Score (31.6&nbsp;&rarr;&nbsp;87.0, heuristic controller) even though raw coverage is similar &mdash; coordination, not exploration, is the bottleneck. Best single episode: <b>8/8 victims rescued at 72% coverage (SIS 83.9)</b>.</div>
+  <div class="note"><b>Finding.</b> With the SIS communication term measuring outcome-linked <b>utility</b> instead of message activity, communication buys the scripted controller <b>+5.0 SIS and +0.8 victims</b> (71.6&nbsp;&rarr;&nbsp;76.6) &mdash; and the learned policies' channel is <b>causally inert</b> (flat SIS across comm conditions, assisted-rescue rate &asymp;&nbsp;0): they talk, but never learned to turn messages into rescues. Best single episode: <b>8/8 victims rescued at 72% coverage (SIS 76.7)</b>.</div>
 </div></section>
 
 <section><div class="wrap">
