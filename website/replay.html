@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Swarm-SAR · Episode Replay</title>
+<style>
+  :root{--bg:#0b1020;--card:#161f3d;--ink:#e8ecf8;--muted:#9aa6c7;--accent:#4f8cff;--accent2:#17c3b2;--line:#26304f}
+  *{box-sizing:border-box} body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink);line-height:1.5}
+  .wrap{max-width:840px;margin:0 auto;padding:24px 18px}
+  h1{font-size:24px;margin:.2em 0} h1 .g{background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{color:var(--muted);font-size:15px;margin:0 0 16px}
+  .stage{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
+  canvas{width:100%;height:auto;image-rendering:pixelated;border-radius:8px;background:#0a0f1f;display:block}
+  .controls{display:flex;align-items:center;gap:12px;margin-top:12px;flex-wrap:wrap}
+  button{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:8px 16px;font-weight:600;cursor:pointer}
+  button.alt{background:transparent;border:1px solid var(--line);color:var(--ink)}
+  input[type=range]{flex:1;min-width:140px;accent-color:var(--accent2)}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px;text-align:center}
+  .kpi{background:#0a0f1f;border:1px solid var(--line);border-radius:10px;padding:10px}
+  .kpi .n{font-size:20px;font-weight:800;color:var(--accent2)} .kpi .l{color:var(--muted);font-size:12px}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:13px;margin-top:14px}
+  .legend span{display:flex;align-items:center;gap:6px} .dot{width:12px;height:12px;border-radius:50%}
+  a{color:var(--accent);text-decoration:none} .foot{color:var(--muted);font-size:13px;margin-top:18px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>&#128641; <span class="g">Swarm-SAR</span> — episode replay</h1>
+  <p class="sub" id="method">Loading…</p>
+  <div class="stage">
+    <canvas id="c" width="480" height="480"></canvas>
+    <div class="controls">
+      <button id="play">&#9658; Play</button>
+      <button id="restart" class="alt">&#8635; Restart</button>
+      <input type="range" id="scrub" min="0" max="0" value="0"/>
+      <select id="speed" class="alt" style="padding:8px;border-radius:8px;background:var(--card);color:var(--ink);border:1px solid var(--line)">
+        <option value="1">1×</option><option value="2" selected>2×</option><option value="4">4×</option>
+      </select>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><div class="n" id="k-step">0</div><div class="l">step</div></div>
+      <div class="kpi"><div class="n" id="k-cov">0%</div><div class="l">coverage</div></div>
+      <div class="kpi"><div class="n" id="k-found">0</div><div class="l">detected</div></div>
+      <div class="kpi"><div class="n" id="k-resc">0</div><div class="l">rescued</div></div>
+    </div>
+    <div class="legend">
+      <span><span class="dot" style="background:#4f8cff"></span>drone</span>
+      <span><span class="dot" style="background:#ffb703"></span>victim</span>
+      <span><span class="dot" style="background:#17c3b2"></span>rescued</span>
+      <span><span class="dot" style="background:#e24b4a"></span>fire/hazard</span>
+      <span><span class="dot" style="background:#2a3352"></span>building</span>
+      <span><span style="width:16px;height:2px;background:#17c3b2;display:inline-block"></span>comm link</span>
+    </div>
+  </div>
+  <p class="foot">Data: <a href="https://github.com/mathi0405/drone-swarm-sar">mathi0405/drone-swarm-sar</a> ·
+    regenerate with <code>python scripts/export_replay.py --out website/replay_data.json</code></p>
+</div>
+<script>
+const CELL = {0:"#0e1730",1:"#1a2444",2:"#2a3352",3:"#1f5b3a",4:"#4a3b2a",5:"#e24b4a",6:"#3a4260",7:"#5a2333",8:"#1b6fae"};
+const cv=document.getElementById("c"), ctx=cv.getContext("2d");
+let D=null, i=0, playing=false, raf=null, acc=0;
+
+fetch("replay_data.json").then(r=>r.json()).then(d=>{
+  D=d;
+  const px=Math.max(6, Math.floor(480/d.size)); cv.width=cv.height=px*d.size; cv._px=px;
+  document.getElementById("method").textContent =
+    `${d.method} · seed ${d.seed} · ${d.frames.length} steps · ${d.victims.length} victims`;
+  document.getElementById("scrub").max=d.frames.length-1;
+  draw(0);
+}).catch(()=>{document.getElementById("method").textContent="Could not load replay_data.json — export one first.";});
+
+function draw(k){
+  if(!D) return; i=k; const px=cv._px, f=D.frames[k];
+  for(let y=0;y<D.size;y++) for(let x=0;x<D.size;x++){
+    ctx.fillStyle=CELL[D.grid[y][x]]||"#0e1730"; ctx.fillRect(x*px,y*px,px,px);
+  }
+  // charging
+  ctx.fillStyle="#1b6fae";
+  D.charging.forEach(c=>{ctx.fillRect(c[0]*px-px*.4,c[1]*px-px*.4,px*.8,px*.8);});
+  // victims (rescued state depends on current step)
+  D.victims.forEach(v=>{
+    const done=v.rescued_step>=0 && f.t>=v.rescued_step;
+    ctx.beginPath(); ctx.arc(v.pos[0]*px+px/2, v.pos[1]*px+px/2, px*.42, 0, 7);
+    ctx.fillStyle=done?"#17c3b2":"#ffb703"; ctx.fill();
+  });
+  // comm links
+  ctx.strokeStyle="rgba(23,195,178,.7)"; ctx.lineWidth=Math.max(1,px*.12);
+  f.edges.forEach(([a,b])=>{
+    if(!f.alive[a]||!f.alive[b])return;
+    ctx.beginPath(); ctx.moveTo(f.pos[a][0]*px+px/2,f.pos[a][1]*px+px/2);
+    ctx.lineTo(f.pos[b][0]*px+px/2,f.pos[b][1]*px+px/2); ctx.stroke();
+  });
+  // drones
+  f.pos.forEach((p,di)=>{
+    ctx.beginPath(); ctx.arc(p[0]*px+px/2,p[1]*px+px/2,px*.5,0,7);
+    ctx.fillStyle=f.alive[di]?"#4f8cff":"#555"; ctx.fill();
+    ctx.strokeStyle="#dbe6ff"; ctx.lineWidth=Math.max(1,px*.1); ctx.stroke();
+  });
+  document.getElementById("scrub").value=k;
+  document.getElementById("k-step").textContent=f.t;
+  document.getElementById("k-cov").textContent=Math.round(f.coverage*100)+"%";
+  document.getElementById("k-found").textContent=f.found;
+  document.getElementById("k-resc").textContent=f.rescued+" / "+D.victims.length;
+}
+function loop(){
+  if(!playing){raf=null;return;}
+  acc+=parseInt(document.getElementById("speed").value);
+  if(acc>=3){acc=0; if(i<D.frames.length-1) draw(i+1); else {playing=false; setPlay();}}
+  raf=requestAnimationFrame(loop);
+}
+function setPlay(){document.getElementById("play").innerHTML=playing?"&#10074;&#10074; Pause":"&#9658; Play";}
+document.getElementById("play").onclick=()=>{if(!D)return; playing=!playing; setPlay(); if(playing&&!raf)loop();};
+document.getElementById("restart").onclick=()=>{draw(0);};
+document.getElementById("scrub").oninput=e=>{playing=false;setPlay();draw(+e.target.value);};
+</script>
+</body>
+</html>
