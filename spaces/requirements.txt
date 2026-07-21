@@ -1,0 +1,4 @@
+# Hugging Face Space runtime: the self-contained demo backend only (no torch,
+# no ray) so the Space builds fast on the free CPU tier. Installs the package
+# straight from GitHub with the viz extra (streamlit, plotly, opencv, seaborn).
+swarm-sar[viz] @ git+https://github.com/mathi0405/drone-swarm-sar.git@main

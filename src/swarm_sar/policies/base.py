@@ -166,5 +166,6 @@ def load_checkpoint(path: str, agent: int = 0):
             f"{path} has neither 'state_dict' nor 'state_dict_{agent}' — "
             "not a Swarm-SAR checkpoint, or an out-of-range agent index.")
     model.load_state_dict(sd)
+    model.spec = spec          # so consumers (export, inference) know obs_dim etc.
     model.eval()
     return model
