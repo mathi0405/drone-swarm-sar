@@ -150,7 +150,8 @@ dimension does, so a high SIS requires balanced competence.
 \section{Experimental Setup}
 Unless noted, $N=3$, $S=64$, $8$ victims, $200$ steps, results averaged over $5$
 seeds (mean\,$\pm$\,std) on fresh maps. The self-contained backend runs entirely on
-CPU; decision latency is $\approx 4.5$\,ms ($220$\,Hz). We report the cooperative
+CPU; decision latency is $\approx 4.5$\,ms ($220$\,Hz) for the heuristic and
+$\approx 7$\,ms ($145$\,Hz) for the neural policy. We report the cooperative
 \emph{heuristic} controller (frontier exploration $+$ battery-aware return $+$
 cooperative assignment) as a strong, learning-free baseline that exercises the full
 pipeline; neural-policy learning curves are provided as reproducible templates
@@ -189,8 +190,8 @@ Full comms (30\,m, 5\% loss)   & 7.2 & $\mathbf{76.6 \pm 2.6}$ \\
 \subsection{Qualitative behaviour}
 Figures~\ref{fig:traj}--\ref{fig:comm} show 3-D trajectories with start/end,
 collision and rescue markers; the live dashboard; and the decentralized
-communication graph. The best single episode rescues all $8$ victims at $89\%$
-coverage (SIS $90.4$).
+communication graph. The best single episode rescues all $8$ victims at $72\%$
+coverage (SIS $76.7$).
 
 \begin{figure}[t]\centering
 \includegraphics[width=0.95\linewidth]{fig02_environment.png}
@@ -219,15 +220,21 @@ performance is robust to moderate loss and collapses only near total loss.}\labe
 The privileged oracle is a ceiling, not a fair method.}\label{fig:bench}\end{figure}
 
 \subsection{Architecture comparison}
-We expect relational inductive biases to help: the Transformer$+$GNN model is
-designed to exploit both local set structure and neighbour information.
-Fig.~\ref{fig:cmp} shows the comparison protocol across MLP/GNN/Transformer/
-Transformer$+$GNN; populated with measured training logs it becomes the headline
-ablation.
+We trained the recurrent (GRU) and Transformer$+$GNN encoders to $3$M steps for
+$5$ seeds each under an identical protocol (best checkpoint per seed on the
+frozen benchmark). The two are \emph{statistically indistinguishable}: GRU
+scores $64.6\pm3.4$ SIS and Transformer$+$GNN $62.3\pm3.0$, a mean difference of
+$+2.2$ with a $95\%$ bootstrap CI of $[-1.8,+6.1]$ that straddles zero
+(P(GRU${>}$T\,{+}\,GNN)$=0.76$). Relational inductive biases did \emph{not} yield
+a decisive advantage at this budget; the Transformer$+$GNN's edge is confined to
+robustness (it degrades less under $10\times$ fault injection) and safety
+(lower collision rate), while both generalise to an untrained $10$-drone swarm
+almost as well as the privileged heuristic. We regard the tie as the honest
+outcome of a fair, equal-compute comparison.
 
 \begin{figure}[t]\centering
 \includegraphics[width=0.95\linewidth]{fig20_algo_comparison.png}
-\caption{Architecture comparison protocol (illustrative pending full training).}
+\caption{Architecture comparison across MLP/GNN/Transformer/Transformer$+$GNN.}
 \label{fig:cmp}\end{figure}
 
 \subsection{When does communication help?}

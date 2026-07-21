@@ -100,6 +100,40 @@ docker compose up swarm-sar     # runs the demo, writes results/
 docker compose up dashboard     # serves the dashboard on :8501
 ```
 
+## Benchmark, model zoo & deployment
+
+```bash
+# Evaluate any checkpoint on the frozen 20-map benchmark (utility-based SIS)
+python scripts/evaluate.py --ckpt path/to/best.pt --out results/eval.json
+
+# Regenerate the public leaderboard from result JSON (PR-based submissions)
+python scripts/update_leaderboard.py results/*.json      # -> docs/leaderboard.md
+
+# Export a policy for edge inference (TorchScript + ONNX + I/O contract)
+python scripts/export_model.py --ckpt path/to/best.pt
+
+# Dump an episode and open the zero-dependency browser replay viewer
+python scripts/export_replay.py --out website/replay_data.json
+#   then open website/replay.html
+```
+
+- **[Benchmark & leaderboard](docs/leaderboard.md)** — SwarmSAR-Bench v1 (20 frozen
+  maps), ranked, with a PR submission protocol and fair-comparison rules.
+- **[Model zoo](docs/model_zoo.md)** — the trained checkpoints with per-model cards.
+- **Docs site:** <https://mathi0405.github.io/drone-swarm-sar> · **Live demo:** deploy
+  `spaces/` to Hugging Face Spaces (see [PUBLISHING.md](PUBLISHING.md)).
+
+## Key finding: does learned communication help?
+
+The SIS communication term measures outcome-linked **utility** (comm-assisted
+rescues + coverage uniqueness), not message volume. Under it, communication buys
+the scripted coordinator **+5.0 SIS / +0.8 victims** (71.6 → 76.6). The central
+**negative result**: our *learned* policies leave the channel **causally inert** —
+they transmit, but the assisted-rescue rate is ≈ 0, and a matched reward for
+acting on messages does not fix it (it's a credit-assignment problem). GRU and
+Transformer+GNN finish **statistically tied** at 3M steps (64.6 ± 3.4 vs
+62.3 ± 3.0; 95% CI on the difference straddles zero).
+
 ## Figure gallery
 
 | | | |
