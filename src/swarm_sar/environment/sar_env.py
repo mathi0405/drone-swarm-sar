@@ -697,6 +697,12 @@ class SARSwarmEnv:
                     v.rescued_by = max(v._dwell_by, key=v._dwell_by.get)
                     v.rescued_step = self.t
                     res += 1
+                    # Credit the loop: if the rescuer first learned of this
+                    # victim over the radio, the message causally produced the
+                    # rescue (reward is 0 unless the comm-reward experiment
+                    # enables comm_assisted_rescue).
+                    if v.rescued_by in self._comm_informed.get(v.idx, set()):
+                        self.reward_inputs[f"drone_{v.rescued_by}"].comm_assisted_rescue = True
                     # Triage urgency: severe victims rescued early pay full
                     # value; late or low-severity rescues pay less (never
                     # below the configured floor).

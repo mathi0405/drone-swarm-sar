@@ -141,3 +141,42 @@ def test_sanitize_json_strips_non_finite():
     text = json.dumps(clean, allow_nan=False)      # raises if any NaN survives
     assert json.loads(text) == {"a": None, "b": [1.0, None], "c": {"d": None},
                                 "e": 3, "ok": 0.5}
+
+
+def test_comm_assisted_rescue_reward_is_opt_in():
+    """The bonus fires for a radio-informed rescuer, and is 0 by default."""
+    from swarm_sar.config import RewardConfig
+    from swarm_sar.environment.reward_engine import RewardEngine, RewardInputs
+
+    # Compare below the +100 reward clip so the delta is visible:
+    ri2 = RewardInputs(victim_rescued=True, rescue_urgency=0.2,
+                       comm_assisted_rescue=True)
+    off2 = RewardEngine(RewardConfig(comm_assisted_rescue=0.0)).compute(ri2)
+    on2 = RewardEngine(RewardConfig(comm_assisted_rescue=25.0)).compute(ri2)
+    assert abs((on2 - off2) - 25.0) < 1e-6
+    # No bonus when the flag on the transition is False.
+    ri3 = RewardInputs(victim_rescued=True, rescue_urgency=0.2,
+                       comm_assisted_rescue=False)
+    assert abs(RewardEngine(RewardConfig(comm_assisted_rescue=25.0)).compute(ri3) - off2) < 1e-6
+
+
+def test_env_sets_comm_assisted_rescue_flag_for_radio_rescuer():
+    env = _env()
+    v = env.world.victims[0]
+    v.detected = True
+    v.detected_by = 1
+    env._victims_known[1].add(v.idx)
+    env.drones[0].kinematics.pos = env.drones[1].kinematics.pos + np.array([1.0, 0.0])
+    env._handle_broadcast(1)
+    env.comm.step(env.t)
+    env._merge_inbox(0)                                   # d0 informed by radio
+
+    # Put d0 on the victim, everyone else away, and step detection/rescue.
+    env.drones[0].kinematics.pos = v.pos.copy()
+    env.reward_inputs = {a: __import__("swarm_sar.environment.reward_engine",
+                                       fromlist=["RewardInputs"]).RewardInputs()
+                         for a in env.agents}
+    env.cfg.dwell_steps_to_rescue = 1
+    env._detect_and_rescue(0)
+    assert v.rescued and v.rescued_by == 0
+    assert env.reward_inputs["drone_0"].comm_assisted_rescue is True

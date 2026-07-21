@@ -38,6 +38,8 @@ class RewardInputs:
     rescue_urgency: float = 1.0
     all_victims_rescued: bool = False
     new_information_broadcast: bool = False
+    # This transition rescued a victim the rescuer first heard about by radio.
+    comm_assisted_rescue: bool = False
     # Collision fires on contact ONSET only (the env tracks contact pairs);
     # lingering proximity is handled by near_collision shaping.
     collision: bool = False
@@ -72,6 +74,10 @@ class RewardEngine:
         if inputs.victim_rescued:
             urgency = inputs.rescue_urgency if r.time_critical_rescue else 1.0
             reward += r.victim_rescued * urgency
+            # Reward acting on received information (0 unless the comm-reward
+            # experiment enables it), so communication has a downstream payoff.
+            if inputs.comm_assisted_rescue:
+                reward += r.comm_assisted_rescue
         if inputs.all_victims_rescued:
             reward += r.mission_complete
         if inputs.collision:

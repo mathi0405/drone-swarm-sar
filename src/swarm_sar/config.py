@@ -118,6 +118,14 @@ class RewardConfig(BaseModel):
     idle: float = -0.05
     collision: float = -10.0
     useful_broadcast: float = 1.0
+    # Bonus paid to the RESCUER when the victim it just rescued was one it first
+    # learned about over the radio (env tracks _comm_informed).  0 = off (the
+    # 3M campaign default).  Non-zero closes the communication credit loop: the
+    # sender already earns useful_broadcast for informing, but the receiver had
+    # no incentive to ACT on what it was told, so the learned channel came out
+    # causally inert (assisted-rescue rate ~0).  Enabled in the comm-reward
+    # experiment configs; kept out of the main campaign for comparability.
+    comm_assisted_rescue: float = 0.0
     approach_victim: float = 2.0
     rescue_dwell: float = 2.0
     separation: float = 0.04
