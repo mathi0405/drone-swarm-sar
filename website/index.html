@@ -44,7 +44,7 @@
   <h1>&#128641; <span class="g">Swarm-SAR</span></h1>
   <p class="sub">Decentralized Multi-Agent Reinforcement Learning for cooperative search-and-rescue drone swarms in unknown disaster environments.</p>
   <div class="cta">
-    <a class="btn" href="https://github.com/your-org/drone-swarm-sar">View on GitHub</a>
+    <a class="btn" href="https://github.com/mathi0405/drone-swarm-sar">View on GitHub</a>
     <a class="btn alt" href="../paper/swarm_sar_paper_preview.pdf">Read the paper (PDF)</a>
     <a class="btn alt" href="#results">See results</a>
   </div>
@@ -67,10 +67,10 @@
   <h2>Headline result: communication controls swarm intelligence</h2>
   <p class="lead">Measured on the self-contained backend, 5 seeds, fresh maps &mdash; reproducible with one command.</p>
   <table>
-    <tr><th>Communication regime</th><th>Coverage</th><th>Collisions/step</th><th>Swarm Intelligence Score</th></tr>
-    <tr><td>No comms (0&nbsp;m, 100% loss)</td><td>84%</td><td>high</td><td>25.2 &plusmn; 12.2</td></tr>
-    <tr><td>Lossy comms (30&nbsp;m, 30% loss)</td><td>80%</td><td>med</td><td>69.5 &plusmn; 19.1</td></tr>
-    <tr><td>Full comms (30&nbsp;m, 5% loss)</td><td>80%</td><td>low</td><td class="hi">71.8 &plusmn; 20.3</td></tr>
+    <tr><th>Communication regime</th><th>Rescued (of 8)</th><th>Swarm Intelligence Score</th></tr>
+    <tr><td>No comms (0&nbsp;m, 100% loss)</td><td>6.4</td><td>71.6 &plusmn; 7.2</td></tr>
+    <tr><td>Lossy comms (30&nbsp;m, 30% loss)</td><td>7.2</td><td>72.6 &plusmn; 4.1</td></tr>
+    <tr><td>Full comms (30&nbsp;m, 5% loss)</td><td>7.2</td><td class="hi">76.6 &plusmn; 2.6</td></tr>
   </table>
   <div style="height:16px"></div>
   <div class="note"><b>Finding.</b> With the SIS communication term measuring outcome-linked <b>utility</b> instead of message activity, communication buys the scripted controller <b>+5.0 SIS and +0.8 victims</b> (71.6&nbsp;&rarr;&nbsp;76.6) &mdash; and the learned policies' channel is <b>causally inert</b> (flat SIS across comm conditions, assisted-rescue rate &asymp;&nbsp;0): they talk, but never learned to turn messages into rescues. Best single episode: <b>8/8 victims rescued at 72% coverage (SIS 76.7)</b>.</div>
@@ -123,9 +123,9 @@ streamlit run src/swarm_sar/dashboard/app.py</code></pre>
 <pre><code>@software{swarmsar2026,
   title  = {Swarm-SAR: Decentralized Multi-Agent RL for Cooperative
             Search-and-Rescue Drone Swarms},
-  author = {Swarm-SAR Contributors},
+  author = {Mathi Manichandan},
   year   = {2026},
-  url    = {https://github.com/your-org/drone-swarm-sar}
+  url    = {https://github.com/mathi0405/drone-swarm-sar}
 }</code></pre>
 </div></section>
 

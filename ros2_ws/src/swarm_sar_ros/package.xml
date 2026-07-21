@@ -3,7 +3,7 @@
   <name>swarm_sar_ros</name>
   <version>0.1.0</version>
   <description>ROS2 bridge for the Swarm-SAR MARL policies (per-drone nodes).</description>
-  <maintainer email="you@example.com">Swarm-SAR</maintainer>
+  <maintainer email="mathimanichandan@gmail.com">Mathi Manichandan</maintainer>
   <license>MIT</license>
   <depend>rclpy</depend>
   <depend>geometry_msgs</depend>

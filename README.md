@@ -148,9 +148,9 @@ Fixed seeds throughout; every metric reported as mean ± std across seeds; each 
 ```bibtex
 @software{swarmsar2026,
   title  = {Swarm-SAR: Decentralized Multi-Agent RL for Cooperative Search-and-Rescue Drone Swarms},
-  author = {Swarm-SAR Contributors},
+  author = {Manichandan, Mathi},
   year   = {2026},
-  url    = {https://github.com/your-org/drone-swarm-sar}
+  url    = {https://github.com/mathi0405/drone-swarm-sar}
 }
 ```
 

@@ -1,0 +1,49 @@
+site_name: Swarm-SAR
+site_description: Decentralized Multi-Agent RL for Cooperative Search-and-Rescue Drone Swarms
+site_author: Mathi Manichandan
+site_url: https://mathi0405.github.io/drone-swarm-sar
+repo_url: https://github.com/mathi0405/drone-swarm-sar
+repo_name: mathi0405/drone-swarm-sar
+copyright: Copyright &copy; 2026 Mathi Manichandan — MIT License
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: teal
+      toggle: { icon: material/brightness-7, name: Switch to dark mode }
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: teal
+      toggle: { icon: material/brightness-4, name: Switch to light mode }
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - toc.integrate
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.details
+  - tables
+  - toc: { permalink: true }
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Installation: installation.md
+      - Configuration: configuration.md
+  - Architecture: architecture.md
+  - Metrics & SIS: metrics.md
+  - Reward design: reward_design.md
+  - Experiments: experiments.md
+  - Benchmark & leaderboard: leaderboard.md
+  - Model zoo: model_zoo.md
+  - Research roadmap: RESEARCH_ROADMAP.md

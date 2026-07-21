@@ -8,4 +8,4 @@ Decentralized Multi-Agent RL for cooperative search & rescue.
 - [Experiments](experiments.md) — ablations, multi-seed protocol, reproducing figures
 - [Metrics & SIS](metrics.md) — the 12 metrics and the Swarm Intelligence Score
 
-Start with the [Quickstart in the README](../README.md#quickstart).
+Start with the [Installation guide](installation.md), then the [Benchmark & leaderboard](leaderboard.md) and [Model zoo](model_zoo.md). The full quickstart lives in the [project README](https://github.com/mathi0405/drone-swarm-sar#quickstart).

@@ -3,12 +3,13 @@ title: "Swarm-SAR: Decentralized Multi-Agent RL for Cooperative Search-and-Rescu
 message: "If you use this software, please cite it as below."
 type: software
 authors:
-  - family-names: "Contributors"
-    given-names: "Swarm-SAR"
+  - family-names: "Manichandan"
+    given-names: "Mathi"
+    email: "mathimanichandan@gmail.com"
 version: 0.1.0
-date-released: 2026-07-01
+date-released: 2026-07-21
 license: MIT
-repository-code: "https://github.com/your-org/drone-swarm-sar"
+repository-code: "https://github.com/mathi0405/drone-swarm-sar"
 keywords:
   - multi-agent reinforcement learning
   - drone swarm
