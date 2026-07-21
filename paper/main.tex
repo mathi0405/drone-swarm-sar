@@ -38,9 +38,11 @@ safety that rewards balanced competence and penalizes swarms that sacrifice any
 single dimension. Using a fully reproducible NumPy simulation backend (with a
 drop-in AirSim/Unreal backend for high-fidelity evaluation), we conduct a
 controlled study of how communication quality shapes swarm intelligence. We find
-that enabling communication nearly \emph{triples} the SIS (from $25.2$ to $71.8$)
-even when raw area coverage is unchanged, demonstrating that coordination---not
-exploration---is the dominant bottleneck in cooperative SAR.
+that enabling communication \emph{improves} the SIS (from $71.6$ to $76.6$, with
+$+0.8$ victims rescued) even when raw area coverage is unchanged, indicating that
+coordination---not exploration---is a key factor in cooperative SAR. A central
+negative result is that our \emph{learned} policies leave this channel causally
+inert: they transmit, but do not convert received messages into rescues.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -156,26 +158,32 @@ pipeline; neural-policy learning curves are provided as reproducible templates
 
 \section{Results}
 \subsection{Communication quality controls swarm intelligence}
-Table~\ref{tab:comm} varies only the radio. Moving from no communication to full
-communication nearly triples the SIS ($25.2\!\rightarrow\!71.8$), while area
-coverage is essentially unchanged (indeed slightly higher without comms, as drones
-spread rather than cluster). The gain is concentrated in the coordination-sensitive
-dimensions (rescue, safety), directly answering our research question:
-coordination, not exploration, is the bottleneck.
+Table~\ref{tab:comm} varies only the radio for the scripted coordinator. Moving
+from no communication to full communication improves the SIS
+($71.6\!\rightarrow\!76.6$) and raises rescues ($6.4\!\rightarrow\!7.2$ of 8),
+while area coverage is essentially unchanged. The gain is concentrated in the
+coordination-sensitive dimensions (rescue, safety), answering our research
+question: coordination, not exploration, is the binding constraint once an area
+is searched. The SIS communication term measures outcome-linked \emph{utility}
+(comm-assisted rescues and coverage uniqueness) rather than raw message volume,
+so a silent-but-well-partitioned swarm is not penalised for staying quiet.
 
 \begin{table}[t]
-\caption{Effect of communication quality (mean\,$\pm$\,std, 5 seeds).}
+\caption{Effect of communication quality on the scripted coordinator
+(utility-based SIS, mean\,$\pm$\,std, 5 seeds).}
 \label{tab:comm}
 \centering
-\begin{tabular}{lccc}
+\setlength{\tabcolsep}{6pt}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{lcc}
 \toprule
-Regime & Coverage & Collisions/step & \textbf{SIS} \\
+Regime & Rescued\,/8 & \textbf{SIS} \\
 \midrule
-No comms (0\,m, 100\% loss)   & 0.84 & high & $25.2 \pm 12.2$ \\
-Lossy comms (30\,m, 30\% loss) & 0.80 & med  & $69.5 \pm 19.1$ \\
-Full comms (30\,m, 5\% loss)   & 0.80 & low  & $\mathbf{71.8 \pm 20.3}$ \\
+No comms (0\,m, 100\% loss)    & 6.4 & $71.6 \pm 7.2$ \\
+Lossy comms (30\,m, 30\% loss) & 7.2 & $72.6 \pm 4.1$ \\
+Full comms (30\,m, 5\% loss)   & 7.2 & $\mathbf{76.6 \pm 2.6}$ \\
 \bottomrule
-\end{tabular}
+\end{tabular}}
 \end{table}
 
 \subsection{Qualitative behaviour}
