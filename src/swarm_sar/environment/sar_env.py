@@ -992,8 +992,6 @@ class SARSwarmEnv:
                         "comm": d.faults.comm_ok, "motor": not d.faults.motor_degraded}
                        for d in self.drones],
         })
-        # running metrics snapshot (TensorBoard/logging)
-        self.metrics = self.episode_summary()
 
     def _agent_info(self, actions: dict[str, int]) -> dict:
         """Per-agent info dict returned from :meth:`step`."""

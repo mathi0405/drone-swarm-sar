@@ -353,7 +353,7 @@ class MAPPOTrainer:
             moves.append(move)
         return moves
 
-    def collect(self, steps: int):
+    def collect(self, steps: int, use_expert: bool | None = None):
         bufs = [RolloutBuffer.empty() for _ in range(self.num_envs * self.n)]
         ep_returns = np.zeros(self.num_envs, dtype=np.float32)
         completed = []
@@ -363,8 +363,12 @@ class MAPPOTrainer:
 
         # Expert (heuristic) actions are only needed for the imitation loss;
         # querying the controller every step in every worker is pure overhead
-        # otherwise.
-        use_expert = self.cfg.train.imitation_coef > 0
+        # otherwise.  The caller passes the ANNEALED coefficient so that once
+        # imitation has annealed to 0 (the last 40-70% of every run) the
+        # per-step expert IPC round trip stops — invisible to learning because
+        # the CE loss is already skipped when the coefficient is 0.
+        if use_expert is None:
+            use_expert = self.cfg.train.imitation_coef > 0
         if use_expert:
             self.vec_env.init_expert(
                 [self.cfg.task_alloc.strategy] * self.num_envs,
@@ -991,7 +995,7 @@ class MAPPOTrainer:
             anneal_frac = max(1e-6, c.imitation_anneal_frac)
             current_imitation = c.imitation_coef * max(0.0, 1.0 - progress / anneal_frac)
 
-            bufs, ep_ret = self.collect(c.rollout_len)
+            bufs, ep_ret = self.collect(c.rollout_len, use_expert=current_imitation > 0)
             stats = self.update(bufs, entropy_coef=current_entropy_coef,
                                 imitation_coef=current_imitation)
             stats["ep_return"] = ep_ret
