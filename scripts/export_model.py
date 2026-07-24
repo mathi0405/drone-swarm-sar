@@ -29,18 +29,7 @@ except ImportError:
 import torch
 
 from swarm_sar.policies import load_policy
-
-
-class ActorExport(torch.nn.Module):
-    """obs (B, obs_dim) -> action logits (B, n_actions), decentralized."""
-
-    def __init__(self, policy):
-        super().__init__()
-        self.policy = policy
-
-    def forward(self, obs: torch.Tensor) -> torch.Tensor:
-        logits, _ = self.policy(obs)          # graph=None, global_state=None
-        return logits
+from swarm_sar.policies.export import ActorExport
 
 
 def main() -> None:

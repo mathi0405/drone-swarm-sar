@@ -26,7 +26,7 @@ def _policy(obs_dim=64, n_actions=8):
 def test_torchscript_matches_eager():
     import torch
 
-    from scripts.export_model import ActorExport
+    from swarm_sar.policies.export import ActorExport
     pol = _policy()
     wrapper = ActorExport(pol).eval()
     x = torch.randn(4, pol.spec.obs_dim)
@@ -41,7 +41,7 @@ def test_torchscript_matches_eager():
 def test_onnx_parity_if_available(tmp_path):
     import torch
 
-    from scripts.export_model import ActorExport
+    from swarm_sar.policies.export import ActorExport
     try:
         import onnxruntime as ort
     except ImportError:
