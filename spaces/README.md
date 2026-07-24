@@ -3,17 +3,18 @@ title: Swarm-SAR Demo
 emoji: 🚁
 colorFrom: indigo
 colorTo: green
-sdk: docker
-app_port: 8501
+sdk: static
+app_file: index.html
 pinned: false
 license: mit
 ---
 
 # Swarm-SAR — live demo
 
-Interactive demo of decentralized Multi-Agent RL for cooperative search-and-rescue
-drone swarms. Run an episode and replay it frame by frame — positions, battery,
-coverage, the communication graph, and mission status.
+Interactive, zero-dependency replay of a decentralized Multi-Agent RL swarm
+searching a procedurally generated disaster site. Play, pause and scrub through
+an episode; watch coverage grow, comm links form, and victims get rescued —
+all client-side in the browser, no server.
 
 Source: https://github.com/mathi0405/drone-swarm-sar
 
@@ -26,7 +27,11 @@ pip install huggingface_hub
 python scripts/deploy_hf_space.py
 ```
 
-This creates a **Docker** Space (HF removed `streamlit` as a create-time SDK) and
-uploads `Dockerfile`, `app.py`, and this `README.md`. The container installs the
-package from GitHub with the torch-free `viz` extra and runs the Streamlit
-dashboard — no GPU, no training dependencies. The build takes a few minutes.
+This deploys a **Static** Space (free on Hugging Face — Docker/Gradio Spaces now
+require PRO) serving the self-contained `index.html` replay viewer and its
+`replay_data.json`. Regenerate the episode data with
+`python scripts/export_replay.py --out spaces/replay_data.json`.
+
+The full interactive Streamlit dashboard (`app.py` + `Dockerfile`) is also here
+for anyone running it locally (`streamlit run src/swarm_sar/dashboard/app.py`)
+or on a PRO Docker Space.
