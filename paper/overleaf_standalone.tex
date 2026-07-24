@@ -1,0 +1,329 @@
+% Swarm-SAR — self-contained IEEE-style preprint.
+% Paste this whole file into a BLANK Overleaf project (main.tex) and hit Recompile.
+% It needs NO external figure files and NO separate .bib — figures are captioned
+% placeholder boxes and the bibliography is inlined.
+%
+% To use the real figures instead of a placeholder, replace a \figph{...} line
+% with, e.g.:   \includegraphics[width=0.95\linewidth]{fig02_environment.png}
+% after uploading the PNGs from results/figures/ to the Overleaf project.
+\documentclass[twocolumn,10pt]{article}
+\usepackage[margin=0.75in]{geometry}
+\usepackage{times}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{url}
+\setlength{\columnsep}{0.28in}
+
+% Placeholder box used in place of \includegraphics so the paper compiles with
+% no image files present.
+\newcommand{\figph}[1]{%
+  \fcolorbox{gray!60}{gray!8}{%
+    \parbox[c][3.2cm][c]{0.9\linewidth}{\centering\itshape #1\\[4pt]
+      \footnotesize[figure placeholder --- replace with \texttt{\textbackslash includegraphics}]}}}
+
+\title{\vspace{-2em}\textbf{Swarm-SAR: Decentralized Multi-Agent Reinforcement Learning for\\ Cooperative Search and Rescue under Realistic Constraints}}
+\author{Mathi Manichandan\\ \small \texttt{https://github.com/mathi0405/drone-swarm-sar}}
+\date{}
+\begin{document}
+\maketitle
+\begin{abstract}
+We present Swarm-SAR, an open framework for studying \emph{cooperative
+intelligence} in autonomous drone swarms performing search and rescue (SAR) in
+unknown disaster environments. A swarm of 3--10 drones must explore procedurally
+generated terrain, detect and rescue victims, coordinate over an unreliable radio
+link, avoid collisions, manage battery, and tolerate hardware faults, using
+\emph{decentralized} policies trained with Centralized Training and Decentralized
+Execution (CTDE). We formalize the task as a Dec-POMDP and solve it with
+Multi-Agent PPO whose per-agent encoder combines a Transformer (intra-agent set
+reasoning) with a Graph Neural Network (inter-agent message passing over the
+dynamic communication graph). We introduce the \emph{Swarm Intelligence Score}
+(SIS), a weighted geometric mean of coverage, rescue, energy, communication and
+safety that rewards balanced competence and penalizes swarms that sacrifice any
+single dimension. Using a fully reproducible NumPy simulation backend (with a
+drop-in AirSim/Unreal backend for high-fidelity evaluation), we conduct a
+controlled study of how communication quality shapes swarm intelligence. We find
+that enabling communication \emph{improves} the SIS (from $71.6$ to $76.6$, with
+$+0.8$ victims rescued) even when raw area coverage is unchanged, indicating that
+coordination---not exploration---is a key factor in cooperative SAR. A central
+negative result is that our \emph{learned} policies leave this channel causally
+inert: they transmit, but do not convert received messages into rescues.
+\end{abstract}
+\noindent\textbf{Keywords:} multi-agent reinforcement learning, drone swarm, search and rescue, CTDE,
+graph neural networks, transformers, robotics.
+\vspace{0.5em}
+
+\section{Introduction}
+Autonomous aerial swarms are a natural fit for search and rescue: many cheap,
+expendable agents can cover a hazardous site faster than a single expensive
+platform. Yet the hard problems are not aerodynamic but \emph{cooperative}---how
+should decentralized agents divide an unknown space, share sparse discoveries over
+a lossy radio, and hand off rescue tasks, all while respecting energy and safety
+constraints? We ask:
+\begin{quote}
+\emph{How can decentralized multi-agent reinforcement learning improve cooperative
+search-and-rescue efficiency under realistic communication, sensing, energy, and
+environmental constraints?}
+\end{quote}
+
+\noindent\textbf{Contributions.}
+(i) A modular, reproducible SAR swarm environment with procedural disaster worlds,
+a full noisy sensing/actuation stack, decentralized communication, energy and
+fault models, exposed through a PettingZoo-parallel API~\cite{terry2021pettingzoo}
+and a drop-in AirSim backend. (ii) A CTDE MAPPO learner with four interchangeable encoders
+(MLP, GNN, Transformer, Transformer+GNN). (iii) The Swarm Intelligence Score, a
+composite metric designed for balanced cooperative competence. (iv) A controlled
+communication-quality study isolating coordination from exploration.
+
+\section{Related Work}
+Cooperative MARL has advanced rapidly with value factorization~\cite{rashid2018qmix},
+actor-critic methods~\cite{lowe2017maddpg,foerster2018coma} and, notably, the
+strong performance of PPO~\cite{schulman2017ppo} in the multi-agent
+setting~\cite{yu2022mappo}. CTDE~\cite{oliehoek2016decpomdp} is the dominant
+paradigm. Relational inductive biases from Graph Neural
+Networks~\cite{velickovic2018gat,hamilton2017graphsage} and
+Transformers~\cite{vaswani2017attention} are attractive for swarms whose neighbour
+sets vary in size and identity. For task hand-off we draw on classical assignment:
+the Hungarian algorithm~\cite{kuhn1955hungarian} and distributed
+auctions~\cite{bertsekas1988auction}. Most related to our encoder is the Multi-Agent
+Transformer~\cite{wen2022mat}, which casts MARL as sequence modeling; we compare
+against it and, unlike it, couple intra-agent attention with GNN message passing
+over the physical communication graph. Learned inter-agent communication has a rich
+lineage---CommNet~\cite{sukhbaatar2016commnet}, DIAL~\cite{foerster2016dial},
+TarMAC~\cite{das2019tarmac} and IC3Net~\cite{singh2019ic3net}---which we build on to
+study \emph{what} and \emph{when} to transmit under bandwidth and packet-loss
+constraints. From multi-robot systems we adopt frontier
+exploration~\cite{yamauchi1997frontier} and Lloyd/Voronoi coverage
+control~\cite{cortes2004coverage} as baselines, and following~\cite{agarwal2021rliable}
+report interquartile means with stratified bootstrap confidence intervals rather than
+mean$\pm$std. Our simulation interoperates with AirSim~\cite{shah2018airsim} and
+scales via RLlib~\cite{liang2018rllib}. Relative to prior swarm-RL
+work~\cite{macua2020swarm}, we emphasize \emph{realistic constraints} (comm loss,
+energy, faults) and a metric tailored to balanced cooperation.
+
+\section{Problem Formulation}
+We model SAR as a Dec-POMDP $\langle \mathcal{I}, \mathcal{S}, \{\mathcal{A}_i\},
+P, \{\Omega_i\}, O, R, \gamma\rangle$ with $N=|\mathcal{I}|$ drones. At time $t$,
+drone $i$ receives a local observation $o_i^t$ (own pose/velocity, battery,
+$k$-nearest visible drones, LiDAR, local occupancy and victim-probability patches,
+and received messages) and selects a discrete action from
+$\mathcal{A}_i=\{$hover, N, S, E, W, ascend, descend, rotate, broadcast,
+return-to-base$\}$. The shared reward combines positive terms (new-area
+exploration, victim detection, rescue, efficient communication, mission
+completion) and negative terms (collision, battery depletion, duplicate
+exploration, idle, excessive communication, time). The objective is
+$\max_{\pi} \mathbb{E}\!\left[\sum_t \gamma^t R^t\right]$ with decentralized
+$\pi_i(a_i\mid \tau_i)$.
+
+\section{Method}
+\subsection{Environment}
+Each episode instantiates a new $S\times S$ occupancy grid (Fig.~\ref{fig:env})
+with roads, buildings, trees, rubble, fire, smoke, dynamic and static obstacles,
+no-fly zones, charging stations and victims. Randomizing the map every episode
+forces generalization rather than memorization. Sensing is probabilistic and
+occlusion-aware (Bresenham line-of-sight; smoke/fire reduce detection); GPS has
+noise, drift and dropout; batteries deplete with speed/altitude/comm/sensor load
+and age over charge cycles.
+
+\subsection{CTDE MAPPO}
+We train with Multi-Agent PPO. Actors are decentralized and consume only $o_i$ and
+neighbour messages; a centralized critic consumes the global state during training
+only. Parameters may be shared or independent. We use GAE and the clipped
+surrogate objective.
+
+\subsection{Transformer\,+\,GNN encoder}
+Each drone tokenizes its observation into self / peer / map / message tokens and
+applies a Transformer for permutation-invariant set reasoning. Agent latents are
+then refined by a GNN over the dynamic communication graph (edge $=$ in-range,
+reachable peer), giving each drone access to what its neighbours know. This
+composition (our Model~4) captures both what an agent sees and what the swarm
+collectively knows.
+
+\subsection{Task allocation, communication, faults}
+Detected victims are assigned to drones by one of five strategies---random,
+nearest, Hungarian~\cite{kuhn1955hungarian}, auction~\cite{bertsekas1988auction},
+or a learned head. Communication is decentralized with finite range, latency and
+packet loss. A fault injector randomly disables drones, GPS, cameras or radios and
+degrades motors, with stochastic recovery, to probe robustness.
+
+\subsection{Learned bandwidth-constrained communication}
+Beyond fixed broadcasts, agents can \emph{learn} what and when to transmit: each
+emits a message vector and a scalar gate; under a bandwidth budget only the
+highest-gated messages are sent, and delivery is further masked by the physical
+channel (range, packet loss). Receivers attend over their inbox (TarMAC-style) to
+form a communication context, and a comm-cost regularizer encourages silence when
+uninformative. This makes communication differentiable and lets us measure emergent
+protocols and graceful degradation under loss (Fig.~\ref{fig:degrade}).
+
+\section{Swarm Intelligence Score}
+We summarize a swarm with a single value in $[0,100]$:
+\begin{equation}
+\mathrm{SIS} = 100 \cdot \prod_{k} c_k^{\,w_k}, \quad \sum_k w_k = 1,
+\end{equation}
+over $c=\{$coverage, rescue, energy, communication, safety$\}$ with default weights
+$\{0.25,0.30,0.15,0.10,0.20\}$. The \emph{geometric} mean is deliberate: a weighted
+sum lets a swarm mask a fatal weakness (e.g.\ high coverage bought with constant
+collisions), whereas the geometric mean collapses toward zero if any single
+dimension does, so a high SIS requires balanced competence.
+
+\section{Experimental Setup}
+Unless noted, $N=3$, $S=64$, $8$ victims, $200$ steps, results averaged over $5$
+seeds (mean\,$\pm$\,std) on fresh maps. The self-contained backend runs entirely on
+CPU; decision latency is $\approx 4.5$\,ms ($220$\,Hz) for the heuristic and
+$\approx 7$\,ms ($145$\,Hz) for the neural policy. We report the cooperative
+\emph{heuristic} controller (frontier exploration $+$ battery-aware return $+$
+cooperative assignment) as a strong, learning-free baseline that exercises the full
+pipeline.
+
+\section{Results}
+\subsection{Communication quality controls swarm intelligence}
+Table~\ref{tab:comm} varies only the radio for the scripted coordinator. Moving
+from no communication to full communication improves the SIS
+($71.6\!\rightarrow\!76.6$) and raises rescues ($6.4\!\rightarrow\!7.2$ of 8),
+while area coverage is essentially unchanged. The gain is concentrated in the
+coordination-sensitive dimensions (rescue, safety), answering our research
+question: coordination, not exploration, is the binding constraint once an area
+is searched. The SIS communication term measures outcome-linked \emph{utility}
+(comm-assisted rescues and coverage uniqueness) rather than raw message volume,
+so a silent-but-well-partitioned swarm is not penalised for staying quiet.
+
+\begin{table}[t]
+\caption{Effect of communication quality on the scripted coordinator
+(utility-based SIS, mean\,$\pm$\,std, 5 seeds).}
+\label{tab:comm}
+\centering
+\setlength{\tabcolsep}{6pt}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{lcc}
+\toprule
+Regime & Rescued\,/8 & \textbf{SIS} \\
+\midrule
+No comms (0\,m, 100\% loss)    & 6.4 & $71.6 \pm 7.2$ \\
+Lossy comms (30\,m, 30\% loss) & 7.2 & $72.6 \pm 4.1$ \\
+Full comms (30\,m, 5\% loss)   & 7.2 & $\mathbf{76.6 \pm 2.6}$ \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\subsection{Qualitative behaviour}
+Figures~\ref{fig:traj}--\ref{fig:comm} show 3-D trajectories with start/end,
+collision and rescue markers; the live dashboard; and the decentralized
+communication graph. The best single episode rescues all $8$ victims at $72\%$
+coverage (SIS $76.7$).
+
+\begin{figure}[t]\centering
+\figph{Procedurally generated disaster world}
+\caption{A procedurally generated disaster world: buildings, roads, trees, rubble,
+fire/smoke, no-fly zones, charging stations and victims. A new map is drawn every
+episode.}\label{fig:env}\end{figure}
+
+\begin{figure}[t]\centering
+\figph{3-D swarm trajectories}
+\caption{3-D trajectories for a 3-drone swarm ($\blacktriangle$ start,
+$\blacksquare$ end, $\times$ collision, $\star$ rescue).}\label{fig:traj}\end{figure}
+
+\begin{figure}[t]\centering
+\figph{Decentralized communication graph}
+\caption{Decentralized communication graph at three instants; edges are in-range,
+successfully-delivered links.}\label{fig:comm}\end{figure}
+
+\begin{figure}[t]\centering
+\figph{Graceful degradation vs.\ packet loss}
+\caption{Graceful degradation of the swarm as communication packet loss increases:
+performance is robust to moderate loss and collapses only near total loss.}\label{fig:degrade}\end{figure}
+
+\begin{figure}[t]\centering
+\figph{Frozen-benchmark comparison}
+\caption{Frozen-benchmark comparison (IQM $\pm$ 95\% bootstrap CI over held-out maps).
+The privileged oracle is a ceiling, not a fair method.}\label{fig:bench}\end{figure}
+
+\subsection{Architecture comparison}
+We trained the recurrent (GRU) and Transformer$+$GNN encoders to $3$M steps for
+$5$ seeds each under an identical protocol (best checkpoint per seed on the
+frozen benchmark). The two are \emph{statistically indistinguishable}: GRU
+scores $64.6\pm3.4$ SIS and Transformer$+$GNN $62.3\pm3.0$, a mean difference of
+$+2.2$ with a $95\%$ bootstrap CI of $[-1.8,+6.1]$ that straddles zero
+(P(GRU${>}$T\,{+}\,GNN)$=0.76$). Relational inductive biases did \emph{not} yield
+a decisive advantage at this budget; the Transformer$+$GNN's edge is confined to
+robustness (it degrades less under $10\times$ fault injection) and safety
+(lower collision rate), while both generalise to an untrained $10$-drone swarm
+almost as well as the privileged heuristic. We regard the tie as the honest
+outcome of a fair, equal-compute comparison.
+
+\begin{figure}[t]\centering
+\figph{Architecture comparison}
+\caption{Architecture comparison across MLP/GNN/Transformer/Transformer$+$GNN.}
+\label{fig:cmp}\end{figure}
+
+\subsection{When does communication help?}
+\emph{Proposition 1 (coordination gain).} Consider $N$ agents searching a region of $C$
+cells, each sensing $s$ cells/step. Without communication, agents choose frontiers
+independently and the expected redundantly-sensed fraction grows with the pairwise
+overlap of their sensing footprints. Sharing coverage maps removes already-explored
+cells from each agent's frontier set, reducing expected redundancy; under a channel with
+per-link delivery probability $p$, the realized reduction is proportional to $p$ up to a
+saturation set by range and bandwidth. Because the SIS penalizes duplicate exploration and
+rewards rescue coordination, $\mathbb{E}[\mathrm{SIS}]$ is non-decreasing in $p$ until
+saturation. \emph{Proof sketch.} Redundancy is a sum of pairwise-overlap indicators;
+delivered coverage messages zero out overlapping frontier candidates in expectation with
+probability $p$, so expected redundancy decreases linearly in $p$; the rescue term
+increases because confirmed-victim messages shorten assignment latency. $\square$ This
+matches the measured degradation curve (Fig.~\ref{fig:degrade}), which is flat under
+moderate loss and collapses only as $p\!\to\!0$.
+
+\section{Reproducibility}
+All measured numbers above are produced by the released code on the self-contained
+backend with fixed seeds; \texttt{scripts/run\_experiments.py} regenerates
+Table~\ref{tab:comm}, and \texttt{scripts/evaluate.py} regenerates the benchmark
+comparison. Trained checkpoints, a public leaderboard, and an interactive replay
+viewer are released alongside the code.
+
+\section{Limitations}
+The fast backend abstracts full rigid-body aerodynamics; high-fidelity claims
+should be validated through the AirSim backend and, ultimately, flight tests via
+the provided ROS2 nodes. The heuristic baseline, while strong, is not a substitute
+for the trained policies in the final evaluation.
+
+\section{Broader Impact}
+Autonomous SAR swarms could accelerate disaster response and reduce risk to human
+responders. The same coordination and perception capabilities are dual-use; we therefore
+restrict this work to civilian SAR, release only simulation code, and omit weaponization-
+relevant components. Deployments must respect airspace regulation, privacy of imaged
+individuals, and fail-safe behaviour under communication loss---properties we make
+first-class (no-fly zones, energy-aware return, fault tolerance) precisely so they can be
+studied rather than assumed.
+
+\section{Conclusion}
+Swarm-SAR provides a reproducible, modular platform for studying cooperative
+intelligence in SAR drone swarms, a metric (SIS) that captures balanced
+competence, and evidence that communication quality matters for coordination while
+learned policies do not yet exploit it. We release code, configs, figures, a
+dashboard, trained checkpoints and Docker images to support follow-on research.
+
+\begin{thebibliography}{99}
+\bibitem{rashid2018qmix} T.~Rashid et al., ``QMIX: Monotonic Value Function Factorisation for Deep Multi-Agent Reinforcement Learning,'' \emph{ICML}, 2018.
+\bibitem{lowe2017maddpg} R.~Lowe et al., ``Multi-Agent Actor-Critic for Mixed Cooperative-Competitive Environments,'' \emph{NeurIPS}, 2017.
+\bibitem{foerster2018coma} J.~Foerster et al., ``Counterfactual Multi-Agent Policy Gradients,'' \emph{AAAI}, 2018.
+\bibitem{schulman2017ppo} J.~Schulman et al., ``Proximal Policy Optimization Algorithms,'' \emph{arXiv:1707.06347}, 2017.
+\bibitem{yu2022mappo} C.~Yu et al., ``The Surprising Effectiveness of PPO in Cooperative Multi-Agent Games,'' \emph{NeurIPS}, 2022.
+\bibitem{oliehoek2016decpomdp} F.~A. Oliehoek and C.~Amato, \emph{A Concise Introduction to Decentralized POMDPs}. Springer, 2016.
+\bibitem{velickovic2018gat} P.~Veli\v{c}kovi\'c et al., ``Graph Attention Networks,'' \emph{ICLR}, 2018.
+\bibitem{hamilton2017graphsage} W.~Hamilton, Z.~Ying, and J.~Leskovec, ``Inductive Representation Learning on Large Graphs,'' \emph{NeurIPS}, 2017.
+\bibitem{vaswani2017attention} A.~Vaswani et al., ``Attention Is All You Need,'' \emph{NeurIPS}, 2017.
+\bibitem{kuhn1955hungarian} H.~W. Kuhn, ``The Hungarian Method for the Assignment Problem,'' \emph{Naval Research Logistics Quarterly}, vol.~2, pp.~83--97, 1955.
+\bibitem{bertsekas1988auction} D.~P. Bertsekas, ``The Auction Algorithm: A Distributed Relaxation Method for the Assignment Problem,'' \emph{Annals of Operations Research}, vol.~14, pp.~105--123, 1988.
+\bibitem{wen2022mat} M.~Wen et al., ``Multi-Agent Reinforcement Learning is a Sequence Modeling Problem,'' \emph{NeurIPS}, 2022.
+\bibitem{sukhbaatar2016commnet} S.~Sukhbaatar, A.~Szlam, and R.~Fergus, ``Learning Multiagent Communication with Backpropagation,'' \emph{NeurIPS}, 2016.
+\bibitem{foerster2016dial} J.~Foerster et al., ``Learning to Communicate with Deep Multi-Agent Reinforcement Learning,'' \emph{NeurIPS}, 2016.
+\bibitem{das2019tarmac} A.~Das et al., ``TarMAC: Targeted Multi-Agent Communication,'' \emph{ICML}, 2019.
+\bibitem{singh2019ic3net} A.~Singh, T.~Jain, and S.~Sukhbaatar, ``Learning When to Communicate at Scale in Multiagent Cooperative and Competitive Tasks,'' \emph{ICLR}, 2019.
+\bibitem{yamauchi1997frontier} B.~Yamauchi, ``A Frontier-Based Approach for Autonomous Exploration,'' \emph{IEEE Int. Symp. on Computational Intelligence in Robotics and Automation}, 1997.
+\bibitem{cortes2004coverage} J.~Cort\'es et al., ``Coverage Control for Mobile Sensing Networks,'' \emph{IEEE Trans. on Robotics and Automation}, vol.~20, no.~2, pp.~243--255, 2004.
+\bibitem{agarwal2021rliable} R.~Agarwal et al., ``Deep Reinforcement Learning at the Edge of the Statistical Precipice,'' \emph{NeurIPS}, 2021.
+\bibitem{shah2018airsim} S.~Shah et al., ``AirSim: High-Fidelity Visual and Physical Simulation for Autonomous Vehicles,'' \emph{Field and Service Robotics}, 2018.
+\bibitem{liang2018rllib} E.~Liang et al., ``RLlib: Abstractions for Distributed Reinforcement Learning,'' \emph{ICML}, 2018.
+\bibitem{macua2020swarm} M.~H\"uttenrauch, A.~\v{S}o\v{s}i\'c, and G.~Neumann, ``Cooperative Multi-Agent Reinforcement Learning for Swarm Robotics,'' \emph{JMLR}, 2019.
+\bibitem{terry2021pettingzoo} J.~Terry et al., ``PettingZoo: Gym for Multi-Agent Reinforcement Learning,'' \emph{NeurIPS}, 2021.
+\end{thebibliography}
+\end{document}
