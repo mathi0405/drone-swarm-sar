@@ -43,7 +43,9 @@ def main() -> int:
 
     repo_root = Path(__file__).resolve().parents[1]
     spaces_dir = repo_root / "spaces"
-    files = ["app.py", "requirements.txt", "README.md"]
+    # Docker Space: HF removed "streamlit" as a create-time SDK, so the
+    # Streamlit dashboard runs inside the Dockerfile (README sets sdk: docker).
+    files = ["Dockerfile", "app.py", "README.md"]
     missing = [f for f in files if not (spaces_dir / f).exists()]
     if missing:
         print(f"ERROR: missing spaces/ files: {missing}", file=sys.stderr)
@@ -53,7 +55,7 @@ def main() -> int:
     api = HfApi(token=token)
 
     print(f"· creating Space {repo_id} (if needed) …")
-    api.create_repo(repo_id=repo_id, repo_type="space", space_sdk="streamlit",
+    api.create_repo(repo_id=repo_id, repo_type="space", space_sdk="docker",
                     exist_ok=True)
 
     for f in files:
