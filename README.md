@@ -36,15 +36,11 @@ Swarm-SAR studies *cooperative intelligence*, not just flight control. A swarm o
 - **20 publication-quality figures**, an animated replay (GIF/MP4), and a live **Streamlit dashboard**.
 - **Runs anywhere**: the self-contained NumPy/Matplotlib backend needs no GPU or AirSim; an **AirSim/Unreal** adapter provides a high-fidelity backend, and a **ROS2** node gives a deployment skeleton (obs assembly + policy + cmd_vel/broadcast publishing) for hardware integration.
 
-## Selected results (measured on the self-contained backend)
+## Reported results (self-contained simulation; provenance audit pending)
 
-These come directly from the shipped code (`scripts/run_demo.py`, `scripts/run_experiments.py`) — **no training required** — using the cooperative *heuristic* controller as a strong baseline. Learning curves for the neural policies are marked *illustrative* until a GPU training run replaces them.
+Results below are simulation results. Heuristic demonstrations, learned-policy evaluations, and illustrative figures must be interpreted separately. The retired activity-based SIS table has been removed: its values cannot be compared with the current utility-based score.
 
-| Communication regime | Coverage | Victims rescued | Collisions/step | **SIS** |
-|---|---:|---:|---:|---:|
-| **No comms** (range 0, 100% loss) | 84% | low | high | **25.2 ± 12.2** |
-| **Lossy comms** (30 m, 30% loss) | 80% | med | med | **69.5 ± 19.1** |
-| **Full comms** (30 m, 5% loss) | 80% | high | low | **71.8 ± 20.3** |
+See [result provenance](docs/result_provenance.md) before quoting a number publicly. The README summaries, model zoo, and leaderboard currently contain differing historical evaluations; they are not a single synchronized experiment.
 
 > **Finding (updated after the SIS communication term was redefined as outcome-linked *utility* rather than message activity).** For the scripted controller, communication is worth **+5.0 SIS and +0.8 victims** (71.6 → 76.6, no-comm → full-comm, 5 seeds) — real but modest, because a silent swarm that partitions its search well now earns the coordination credit it deserves. The earlier "communication triples SIS" headline was largely a metric artifact: the activity-based term zeroed silent swarms. For the **learned** policies the channel is causally inert: SIS is flat across no/lossy/full comm and the assisted-rescue rate (rescues where the rescuer's first knowledge of the victim arrived by radio) is ≈0 — the policies communicate but never learned to convert messages into rescues. Closing that gap is the clearest open problem this benchmark poses.
 
