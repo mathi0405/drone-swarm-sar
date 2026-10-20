@@ -24,7 +24,7 @@ python scripts/comm_study.py --losses 0 0.3 1 --seeds 200 201 202 203 204 205 20
 
 The adjacent JSON records the exact code revision, clean working-tree state, resolved configurations, command and per-episode metrics. The MP4 is an illustrative replay of map seed 200 under the two endpoint conditions; it is not the aggregate benchmark.
 
-To regenerate the labeled 45-second comparison video (writes `results/comparison_demo/`):
+To regenerate the labeled comparison video (writes `results/comparison_demo/`):
 
 ```bash
 pip install imageio-ffmpeg
