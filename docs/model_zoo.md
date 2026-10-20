@@ -1,5 +1,7 @@
 # Model zoo
 
+> **Historical evaluation artifact:** checkpoint/configuration/metric provenance has not yet been reconciled with the other public tables. Do not treat this as the current synchronized benchmark. See [result provenance](result_provenance.md).
+
 Trained MAPPO checkpoints from the 3M-step campaign, evaluated on the
 frozen 20-map benchmark (utility-based SIS). Checkpoints are released as
 assets on [v0.1.0](https://github.com/mathi0405/drone-swarm-sar/releases/tag/v0.1.0).

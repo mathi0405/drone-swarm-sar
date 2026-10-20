@@ -36,17 +36,19 @@ Swarm-SAR studies *cooperative intelligence*, not just flight control. A swarm o
 - **20 publication-quality figures**, an animated replay (GIF/MP4), and a live **Streamlit dashboard**.
 - **Runs anywhere**: the self-contained NumPy/Matplotlib backend needs no GPU or AirSim; an **AirSim/Unreal** adapter provides a high-fidelity backend, and a **ROS2** node gives a deployment skeleton (obs assembly + policy + cmd_vel/broadcast publishing) for hardware integration.
 
-## Reported results (self-contained simulation; provenance audit pending)
+## Measured reference run (20 October 2026)
 
-Results below are simulation results. Heuristic demonstrations, learned-policy evaluations, and illustrative figures must be interpreted separately. The retired activity-based SIS table has been removed: its values cannot be compared with the current utility-based score.
+The current reproducible reference is a **scripted heuristic**, evaluated in the self-contained simulator on 20 map seeds per condition (60 episodes). It is not a learned-policy result or hardware validation.
 
-See [result provenance](docs/result_provenance.md) before quoting a number publicly. The README summaries, model zoo, and leaderboard currently contain differing historical evaluations; they are not a single synchronized experiment.
+| Packet loss | Mean rescued | SIS mean ± std across maps |
+|---|---:|---:|
+| 0% | 6.35/8 | 65.65 ± 22.19 |
+| 30% | 6.00/8 | 64.31 ± 21.97 |
+| 100% | 6.75/8 | 72.67 ± 8.54 |
 
-> **Finding (updated after the SIS communication term was redefined as outcome-linked *utility* rather than message activity).** For the scripted controller, communication is worth **+5.0 SIS and +0.8 victims** (71.6 → 76.6, no-comm → full-comm, 5 seeds) — real but modest, because a silent swarm that partitions its search well now earns the coordination credit it deserves. The earlier "communication triples SIS" headline was largely a metric artifact: the activity-based term zeroed silent swarms. For the **learned** policies the channel is causally inert: SIS is flat across no/lossy/full comm and the assisted-rescue rate (rescues where the rescuer's first knowledge of the victim arrived by radio) is ≈0 — the policies communicate but never learned to convert messages into rescues. Closing that gap is the clearest open problem this benchmark poses.
+Communication disabled also sets radio range to zero, affecting peer visibility. These results do not isolate message content or establish statistical superiority. See the [full report, raw metrics and comparison video](results/portfolio_audit_20261020/) and [result provenance](docs/result_provenance.md).
 
-Single best demo episode (heuristic controller): **8/8 victims rescued, 72% coverage, SIS 76.7**; benchmark IQM across the 20 frozen maps: heuristic **74.5 [67.2, 76.7]**, learned MAPPO at 3M steps (best checkpoint per seed, 5 seeds): **GRU 64.6 ± 3.4**, **Transformer-GNN 62.3 ± 3.0**. Measured decision latency for the *neural* policy: **≈7 ms/step (~145 Hz) on laptop CPU** (`scripts/evaluate.py`, `inference` block — hardware-dependent; re-measure on your target platform).
-
-
+Historical learned-policy summaries in the model zoo and leaderboard have not yet been reconciled against identical checkpoint/configuration/metric versions. Do not quote them as a synchronized comparison. Some generated learning curves are illustrative rather than measured training logs.
 
 ## Research-grade additions (v0.2)
 
@@ -119,16 +121,9 @@ python scripts/export_replay.py --out website/replay_data.json
 - **Docs site:** <https://mathi0405.github.io/drone-swarm-sar> · **Live demo:** deploy
   `spaces/` to Hugging Face Spaces (see [PUBLISHING.md](PUBLISHING.md)).
 
-## Key finding: does learned communication help?
+## Open question: does learned communication help?
 
-The SIS communication term measures outcome-linked **utility** (comm-assisted
-rescues + coverage uniqueness), not message volume. Under it, communication buys
-the scripted coordinator **+5.0 SIS / +0.8 victims** (71.6 → 76.6). The central
-**negative result**: our *learned* policies leave the channel **causally inert** —
-they transmit, but the assisted-rescue rate is ≈ 0, and a matched reward for
-acting on messages does not fix it (it's a credit-assignment problem). GRU and
-Transformer+GNN finish **statistically tied** at 3M steps (64.6 ± 3.4 vs
-62.3 ± 3.0; 95% CI on the difference straddles zero).
+Historical experiments motivated the hypothesis that learned agents do not consistently convert messages into rescues. Confirming this requires a controlled message-content intervention on frozen checkpoints with matched evaluation settings. The measured heuristic reference above does not answer that learned-policy question.
 
 ## Figure gallery
 
