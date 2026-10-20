@@ -1,0 +1,50 @@
+{
+  "controller": "scripted heuristic auction; not a learned policy",
+  "backend": "self-contained simulation",
+  "map_seed": 200,
+  "intervention": "0% packet loss versus 100% loss plus zero radio range; peer visibility also changes",
+  "episodes": [
+    {
+      "coverage": 0.8896484375,
+      "completion_score": 0.8231436903807192,
+      "mission_success": 1.0,
+      "partial_success": 1.0,
+      "good_success": 1.0,
+      "excellent_success": 1.0,
+      "victims_rescued": 8.0,
+      "victims_detected": 8.0,
+      "avg_rescue_time": 45.75,
+      "path_efficiency": 0.39783598764787104,
+      "collision_rate": 0.0,
+      "energy_wh": 82.42222222222222,
+      "communication_efficiency": 1.0,
+      "communication_utility": 0.33642157690359614,
+      "comm_assisted_rescues": 2.0,
+      "coverage_uniqueness": 0.4228431538071923,
+      "exploration_entropy": 0.660704045736563,
+      "robustness": 1.0,
+      "swarm_intelligence_score": 82.46
+    },
+    {
+      "coverage": 0.9326171875,
+      "completion_score": 0.8006365838693298,
+      "mission_success": 1.0,
+      "partial_success": 1.0,
+      "good_success": 1.0,
+      "excellent_success": 1.0,
+      "victims_rescued": 8.0,
+      "victims_detected": 8.0,
+      "avg_rescue_time": 34.125,
+      "path_efficiency": 0.29821587821733486,
+      "collision_rate": 0.0,
+      "energy_wh": 88.84444444444448,
+      "communication_efficiency": 0.0,
+      "communication_utility": 0.13794854434664863,
+      "comm_assisted_rescues": 0.0,
+      "coverage_uniqueness": 0.27589708869329727,
+      "exploration_entropy": 0.8383493962197685,
+      "robustness": 1.0,
+      "swarm_intelligence_score": 75.93
+    }
+  ]
+}
